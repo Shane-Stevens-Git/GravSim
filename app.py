@@ -639,7 +639,7 @@ class App:
         """Step back `snapshots` entries in the rewind buffer."""
         snap = None
         for _ in range(snapshots):
-            snap = self.history.rewind() or snap
+            snap = self.history.rewind(self.rng) or snap
         if snap is None:
             return False
         self.sim_time, self.bodies, sun, target = snap
@@ -739,7 +739,7 @@ class App:
                 self.flashes.add(kind, pos, strength)
                 self.sound.play(kind, mass, strength)
             self.sim_time += steps * PHYSICS_DT
-            self.history.record(self.sim_time, self.bodies, self.sun, self.target)
+            self.history.record(self.sim_time, self.bodies, self.sun, self.target, self.rng)
             if self.show_energy:
                 self.sample_energy()
 
