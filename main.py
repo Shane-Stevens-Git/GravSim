@@ -10,11 +10,12 @@ from collections import deque
 import numpy as np
 import pygame
 
+import ui
+
 # --- Window / timing -------------------------------------------------------
 WIDTH, HEIGHT = 1280, 800
 FPS = 60
 BG_COLOR = (8, 10, 20)
-HUD_COLOR = (170, 170, 190)
 
 # --- Physics -----------------------------------------------------------------
 # Units: distance in pixels, time in seconds, mass in arbitrary "mass units".
@@ -253,6 +254,27 @@ def predict_path(bodies, start, vel0, frame_body=None):
     return points
 
 
+def orbit_info(rel_pos, rel_vel, central_mass, impact_radius):
+    """Two-body orbit a launch would produce around `central_mass`.
+
+    Returns eccentricity, whether the orbit escapes (energy >= 0), and
+    whether its closest approach is inside `impact_radius`.
+    """
+    mu = G * central_mass
+    r = rel_pos.length()
+    v2 = rel_vel.length_squared()
+    if r < 1e-6:
+        return None
+    energy = v2 / 2 - mu / r
+    e_vec = ((v2 - mu / r) * rel_pos - rel_pos.dot(rel_vel) * rel_vel) / mu
+    e = e_vec.length()
+    if energy >= 0:
+        return {"e": e, "escape": True, "impact": False}
+    a = -mu / (2 * energy)
+    periapsis = a * (1 - e)
+    return {"e": e, "escape": False, "impact": periapsis < impact_radius}
+
+
 def circular_speed(central_mass, r):
     """Speed needed for a circular orbit of radius r: v = sqrt(G*M/r)."""
     return (G * central_mass / max(r, 1e-6)) ** 0.5
@@ -296,7 +318,7 @@ def main():
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("GravSim")
     clock = pygame.time.Clock()
-    font = pygame.font.SysFont("consolas", 16)
+    hud = ui.HUD(WIDTH, HEIGHT)
     background = make_starfield()
 
     bodies = make_scene()
@@ -311,6 +333,7 @@ def main():
     mode = "merge"              # collision mode: "merge" or "bounce"
     paused = False
     accumulator = 0.0
+    sim_time = 0.0
     cam = pygame.Vector2(0, 0)  # world position of the screen's top-left corner
 
     def launch_velocity(mouse):
@@ -337,6 +360,8 @@ def main():
                     running = False
                 elif event.key == pygame.K_SPACE:
                     paused = not paused
+                elif event.key == pygame.K_h:
+                    hud.show_help = not hud.show_help
                 elif event.key == pygame.K_t:
                     show_preview = not show_preview
                 elif event.key == pygame.K_l:
@@ -358,6 +383,7 @@ def main():
                     bodies = make_scene(sun.fixed)
                     sun = bodies[0]
                     sun.trail = deque(maxlen=SUN_TRAIL_LENGTH)
+                    sim_time = 0.0
                 elif pygame.K_1 <= event.key < pygame.K_1 + len(PRESETS):
                     preset_idx = event.key - pygame.K_1
                     size_mult = mass_mult = 1.0
@@ -386,6 +412,7 @@ def main():
             steps = int(accumulator / PHYSICS_DT)
             accumulator -= steps * PHYSICS_DT
             simulate(bodies, PHYSICS_DT, steps, mode)
+            sim_time += steps * PHYSICS_DT
 
         if sun not in bodies and bodies:          # sun got swallowed or flung away
             sun = max(bodies, key=lambda b: b.mass)
@@ -416,36 +443,44 @@ def main():
             b.draw(screen, cam)
 
         name, m, r, color = selected()
-        aim_text = ""
         if drag_start is not None:
             vel = launch_velocity(mouse)
-            if show_preview:
-                v0 = vel + sun.vel if following else vel
-                for p in predict_path(bodies, tuple(drag_start + cam), tuple(v0),
-                                      sun if following else None):
-                    pygame.draw.circle(screen, (120, 120, 150),
-                                       (round(p[0] - cam.x), round(p[1] - cam.y)), 1)
-            Body(drag_start + cam, m, r, color).draw(screen, cam)
-            draw_arrow(screen, drag_start, drag_start + vel / LAUNCH_SCALE, (230, 230, 240))
+            start = drag_start + cam
+            v_circ = orbit = None
             if sun in bodies:
-                v_circ = circular_speed(sun.mass, (drag_start + cam).distance_to(sun.pos))
-                aim_text = f"   launch {vel.length():6.1f} px/s  (circular here: {v_circ:5.1f})"
+                v_circ = circular_speed(sun.mass, start.distance_to(sun.pos))
+                rel_vel = vel if following else vel - sun.vel
+                orbit = orbit_info(start - sun.pos, rel_vel, sun.mass, sun.radius + r)
+            status_color = hud.orbit_status(orbit)[1]
+            if show_preview:
+                dot = [int(c * 0.6) for c in status_color]
+                v0 = vel + sun.vel if following else vel
+                for p in predict_path(bodies, tuple(start), tuple(v0),
+                                      sun if following else None):
+                    pygame.draw.circle(screen, dot, (round(p[0] - cam.x), round(p[1] - cam.y)), 1)
+            Body(start, m, r, color).draw(screen, cam)
+            draw_arrow(screen, drag_start, drag_start + vel / LAUNCH_SCALE, status_color)
+            aim = (mouse, vel.length(), v_circ, orbit)
         else:
+            aim = None
             pygame.draw.circle(screen, color, mouse, r, 1)
 
-        lines = [
-            f"FPS {clock.get_fps():5.1f}   bodies {len(bodies)}   "
-            f"collisions: {mode.upper()}   sun {'PINNED' if sun.fixed else 'free'}   "
-            f"camera: {'follow sun' if following else 'fixed'}"
-            f"{'   PAUSED' if paused else ''}",
-            f"[1-5] {name}: mass {m:.4g}, radius {r}   "
-            f"(scroll: size  Shift+scroll: mass){aim_text}",
-            "drag to throw  [RMB] cancel  [M] merge/bounce  [L] trails  [T] preview  "
-            "[V] camera  [F] pin sun",
-            "[C] clear  [R] reset  [Space] pause  [Esc] quit",
+        # --- UI ---
+        toggles = [
+            ("M", "Collisions", mode.upper(), True),
+            ("L", "Trails", "ON" if show_trails else "OFF", show_trails),
+            ("T", "Aim preview", "ON" if show_preview else "OFF", show_preview),
+            ("V", "Camera", "FOLLOW SUN" if following else "FIXED", following),
+            ("F", "Sun", "PINNED" if sun.fixed else "FREE", True),
         ]
-        for i, text in enumerate(lines):
-            screen.blit(font.render(text, True, HUD_COLOR), (10, 10 + i * 20))
+        hud.draw_status(screen, clock.get_fps(), len(bodies), sim_time, toggles)
+        hud.draw_controls(screen)
+        hud.draw_toolbar(screen, PRESETS, preset_idx, r, m, size_mult, mass_mult,
+                         SIZE_RANGE, MASS_RANGE)
+        if paused:
+            hud.draw_paused(screen)
+        if aim:                                   # on top of everything else
+            hud.draw_aim(screen, *aim)
         pygame.display.flip()
 
     pygame.quit()

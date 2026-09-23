@@ -27,6 +27,7 @@ python main.py
 | **V** | Camera: follow sun / fixed |
 | **F** | Pin / unpin the sun |
 | **C** / **R** | Clear thrown bodies / reset scene |
+| **H** | Show / hide the controls panel |
 | **Space** / **Esc** | Pause / quit |
 
 Tip: the HUD shows the circular-orbit speed at your launch point. Drag
