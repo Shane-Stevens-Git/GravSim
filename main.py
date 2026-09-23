@@ -1,13 +1,12 @@
 """GravSim - a 2D interactive gravity sandbox.
 
-Step 3: click-and-drag to launch new bodies. Pick a body type with the
-number keys, press the mouse where it should start, drag to set its
-velocity, release to throw. Bodies are still only pulled by the sun
-(full n-body comes in step 4).
+Step 4: full n-body gravity. Every body pulls on every other body
+(including the sun, which is now free to move unless pinned with F).
+The physics runs on NumPy arrays so dozens of bodies stay fast.
 """
-import math
 import random
 
+import numpy as np
 import pygame
 
 # --- Window / timing -------------------------------------------------------
@@ -27,8 +26,9 @@ CULL_DISTANCE = 4000        # px from screen center; farther bodies are deleted
 # --- Launch controls -----------------------------------------------------------
 LAUNCH_SCALE = 1.0          # launch speed (px/s) per pixel dragged
 SLINGSHOT = False           # False: drag the way it should go. True: pull back like a slingshot.
-PREVIEW_STEPS = 480         # trajectory preview length (steps of PREVIEW_DT)
-PREVIEW_DT = 1 / 60
+PREVIEW_STEPS = 320         # trajectory preview length (steps of PREVIEW_DT)
+PREVIEW_DT = 1 / 40
+PREVIEW_MAX_BODIES = 12     # preview only simulates the heaviest bodies (for speed)
 
 # Body presets, selected with number keys 1-5: (name, mass, radius, color)
 PRESETS = [
@@ -48,11 +48,10 @@ class Body:
     def __init__(self, pos, mass, radius, color, vel=(0, 0), fixed=False):
         self.pos = pygame.Vector2(pos)
         self.vel = pygame.Vector2(vel)
-        self.acc = pygame.Vector2(0, 0)
         self.mass = mass
         self.radius = radius
         self.color = color
-        self.fixed = fixed  # fixed bodies never move (the sun, for now)
+        self.fixed = fixed  # fixed ("pinned") bodies pull on others but never move
 
     @classmethod
     def glow_surface(cls, radius, color):
@@ -75,54 +74,77 @@ class Body:
 
 
 # --- Physics -----------------------------------------------------------------
-def gravity_accel(pos, attractors, exclude=None):
-    """Acceleration at `pos` from every attractor: a = G*M / r^2, toward M."""
-    acc = pygame.Vector2(0, 0)
-    for other in attractors:
-        if other is exclude:
-            continue
-        d = other.pos - pos
-        dist_sq = d.length_squared() + SOFTENING ** 2
-        acc += d * (G * other.mass / (dist_sq * math.sqrt(dist_sq)))
-    return acc
+def accelerations(pos, mass):
+    """N-body gravity: a_i = sum_j G*m_j * (p_j - p_i) / |p_j - p_i|^3.
 
-
-def physics_step(bodies, dt):
-    """Advance one fixed step with velocity Verlet (keeps orbits stable).
-
-    Step 3: only fixed bodies (the sun) pull on things.
+    pos: (n, 2) array, mass: (n,) array. Computed for all pairs at once.
     """
-    movers = [b for b in bodies if not b.fixed]
-    attractors = [b for b in bodies if b.fixed]
-
-    for b in movers:                       # 1. drift positions
-        b.pos += b.vel * dt + 0.5 * b.acc * dt * dt
-    for b in movers:                       # 2. new accel, 3. kick velocity
-        new_acc = gravity_accel(b.pos, attractors, exclude=b)
-        b.vel += 0.5 * (b.acc + new_acc) * dt
-        b.acc = new_acc
+    d = pos[None, :, :] - pos[:, None, :]           # d[i, j] = p_j - p_i
+    dist_sq = (d * d).sum(axis=-1) + SOFTENING ** 2
+    inv_r3 = dist_sq ** -1.5
+    np.fill_diagonal(inv_r3, 0.0)                   # no self-attraction
+    return G * (d * (mass[None, :] * inv_r3)[:, :, None]).sum(axis=1)
 
 
-def predict_path(pos, vel, attractors):
-    """Integrate a test particle forward to preview where a throw will go."""
-    pos, vel = pygame.Vector2(pos), pygame.Vector2(vel)
-    acc = gravity_accel(pos, attractors)
+def pack(bodies):
+    """Body objects -> NumPy arrays."""
+    pos = np.array([(b.pos.x, b.pos.y) for b in bodies], dtype=float).reshape(-1, 2)
+    vel = np.array([(b.vel.x, b.vel.y) for b in bodies], dtype=float).reshape(-1, 2)
+    mass = np.array([b.mass for b in bodies], dtype=float)
+    movable = np.array([0.0 if b.fixed else 1.0 for b in bodies])[:, None]
+    return pos, vel, mass, movable
+
+
+def verlet(pos, vel, acc, mass, movable, dt):
+    """One velocity-Verlet step, in place. Returns the new accelerations."""
+    pos += movable * (vel * dt + 0.5 * acc * dt * dt)
+    new_acc = accelerations(pos, mass)
+    vel += movable * (0.5 * (acc + new_acc) * dt)
+    return new_acc
+
+
+def simulate(bodies, dt, steps):
+    """Advance all bodies `steps` fixed steps and write results back."""
+    if not bodies or steps == 0:
+        return
+    pos, vel, mass, movable = pack(bodies)
+    acc = accelerations(pos, mass)
+    for _ in range(steps):
+        acc = verlet(pos, vel, acc, mass, movable, dt)
+    for b, p, v in zip(bodies, pos, vel):
+        b.pos.update(p[0], p[1])
+        b.vel.update(v[0], v[1])
+
+
+def predict_path(bodies, start, vel0):
+    """Preview a throw: a massless test particle flown through the full
+    n-body system (other bodies move during the preview too).
+
+    Only the heaviest few bodies are included - tiny ones barely affect
+    the path, and simulating everything every frame would be too slow.
+    """
+    bodies = sorted(bodies, key=lambda b: b.mass, reverse=True)[:PREVIEW_MAX_BODIES]
+    pos, vel, mass, movable = pack(bodies)
+    radii = np.array([b.radius for b in bodies], dtype=float)
+    pos = np.vstack([pos, start])
+    vel = np.vstack([vel, vel0])
+    mass = np.append(mass, 0.0)                     # test particle pulls on nothing
+    movable = np.vstack([movable, [[1.0]]])
+    acc = accelerations(pos, mass)
     points = []
     for i in range(PREVIEW_STEPS):
-        pos += vel * PREVIEW_DT + 0.5 * acc * PREVIEW_DT ** 2
-        new_acc = gravity_accel(pos, attractors)
-        vel += 0.5 * (acc + new_acc) * PREVIEW_DT
-        acc = new_acc
-        if any(pos.distance_to(a.pos) < a.radius for a in attractors):
-            break  # would hit something
-        if i % 4 == 0:
-            points.append((round(pos.x), round(pos.y)))
+        acc = verlet(pos, vel, acc, mass, movable, PREVIEW_DT)
+        p = pos[-1]
+        if len(radii) and (np.hypot(*(pos[:-1] - p).T) < radii).any():
+            break                                   # would hit something
+        if i % 3 == 0:
+            points.append((round(p[0]), round(p[1])))
     return points
 
 
 def circular_speed(central_mass, r):
     """Speed needed for a circular orbit of radius r: v = sqrt(G*M/r)."""
-    return math.sqrt(G * central_mass / max(r, 1e-6))
+    return (G * central_mass / max(r, 1e-6)) ** 0.5
 
 
 # --- Rendering helpers --------------------------------------------------------
@@ -142,22 +164,22 @@ def draw_arrow(surface, start, end, color):
     if d.length() < 8:
         return
     d.scale_to_length(10)
-    left, right = d.rotate(150), d.rotate(-150)
-    pygame.draw.polygon(surface, color, [end, end + left, end + right])
+    pygame.draw.polygon(surface, color, [end, end + d.rotate(150), end + d.rotate(-150)])
 
 
-def make_scene():
+def make_scene(sun_fixed=False):
     """Sun plus the demo planet from step 2."""
     sun = Body((WIDTH / 2, HEIGHT / 2), mass=10_000, radius=30,
-               color=(255, 200, 60), fixed=True)
+               color=(255, 200, 60), fixed=sun_fixed)
     r0 = 220
     v0 = 0.85 * circular_speed(sun.mass, r0)
     planet = Body((sun.pos.x + r0, sun.pos.y), mass=20, radius=8,
                   color=(90, 170, 255), vel=(0, -v0))
-    bodies = [sun, planet]
-    for b in bodies:
-        b.acc = gravity_accel(b.pos, [o for o in bodies if o.fixed], exclude=b)
-    return bodies
+    # Give the sun the opposite momentum so the system's center of mass
+    # stays put instead of slowly drifting off-screen.
+    if not sun.fixed:
+        sun.vel = -planet.vel * planet.mass / sun.mass
+    return [sun, planet]
 
 
 def main():
@@ -169,6 +191,7 @@ def main():
     background = make_starfield()
 
     bodies = make_scene()
+    sun = bodies[0]
     preset_idx = 2              # start on "Planet"
     drag_start = None           # mouse-down position while aiming, else None
     show_preview = True
@@ -194,10 +217,14 @@ def main():
                     paused = not paused
                 elif event.key == pygame.K_t:
                     show_preview = not show_preview
-                elif event.key == pygame.K_c:     # clear everything but fixed bodies
-                    bodies = [b for b in bodies if b.fixed]
+                elif event.key == pygame.K_f and sun in bodies:   # pin / unpin the sun
+                    sun.fixed = not sun.fixed
+                    sun.vel.update(0, 0)
+                elif event.key == pygame.K_c:     # clear everything but the sun
+                    bodies = [b for b in bodies if b is sun]
                 elif event.key == pygame.K_r:     # reset to the starting scene
-                    bodies = make_scene()
+                    bodies = make_scene(sun.fixed)
+                    sun = bodies[0]
                 elif pygame.K_1 <= event.key < pygame.K_1 + len(PRESETS):
                     preset_idx = event.key - pygame.K_1
             elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -207,17 +234,16 @@ def main():
                     drag_start = None
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1 and drag_start:
                 _, mass, radius, color = PRESETS[preset_idx]
-                body = Body(drag_start, mass, radius, color, vel=launch_velocity(event.pos))
-                body.acc = gravity_accel(body.pos, [b for b in bodies if b.fixed])
-                bodies.append(body)
+                bodies.append(Body(drag_start, mass, radius, color,
+                                   vel=launch_velocity(event.pos)))
                 drag_start = None
 
         # Fixed-timestep physics
         if not paused:
             accumulator += frame_time
-            while accumulator >= PHYSICS_DT:
-                physics_step(bodies, PHYSICS_DT)
-                accumulator -= PHYSICS_DT
+            steps = int(accumulator / PHYSICS_DT)
+            accumulator -= steps * PHYSICS_DT
+            simulate(bodies, PHYSICS_DT, steps)
 
         # Remove bodies that have been flung far away
         center = pygame.Vector2(WIDTH / 2, HEIGHT / 2)
@@ -232,28 +258,23 @@ def main():
         aim_text = ""
         if drag_start is not None:
             vel = launch_velocity(mouse)
-            attractors = [b for b in bodies if b.fixed]
             if show_preview:
-                for p in predict_path(drag_start, vel, attractors):
+                for p in predict_path(bodies, (drag_start.x, drag_start.y), (vel.x, vel.y)):
                     pygame.draw.circle(screen, (120, 120, 150), p, 1)
-            ghost = Body(drag_start, mass, radius, color)
-            ghost.draw(screen)
-            arrow_end = drag_start + vel / LAUNCH_SCALE
-            draw_arrow(screen, drag_start, arrow_end, (230, 230, 240))
-            # Reference: speed for a circular orbit around the sun at this spot
-            sun = attractors[0]
-            v_circ = circular_speed(sun.mass, drag_start.distance_to(sun.pos))
-            aim_text = f"   launch {vel.length():6.1f} px/s  (circular here: {v_circ:5.1f})"
+            Body(drag_start, mass, radius, color).draw(screen)
+            draw_arrow(screen, drag_start, drag_start + vel / LAUNCH_SCALE, (230, 230, 240))
+            if sun in bodies:
+                v_circ = circular_speed(sun.mass, drag_start.distance_to(sun.pos))
+                aim_text = f"   launch {vel.length():6.1f} px/s  (circular here: {v_circ:5.1f})"
         else:
-            # Hover preview of the selected body under the cursor
             pygame.draw.circle(screen, color, mouse, radius, 1)
 
         lines = [
-            f"FPS {clock.get_fps():5.1f}   bodies {len(bodies)}"
-            f"{'   PAUSED' if paused else ''}",
+            f"FPS {clock.get_fps():5.1f}   bodies {len(bodies)}   "
+            f"sun {'PINNED' if sun.fixed else 'free'}{'   PAUSED' if paused else ''}",
             f"[1-5] type: {name} (mass {mass}, r {radius}){aim_text}",
-            "drag to throw  [RMB] cancel  [T] preview  [C] clear  [R] reset  "
-            "[Space] pause  [Esc] quit",
+            "drag to throw  [RMB] cancel  [T] preview  [F] pin sun  [C] clear  "
+            "[R] reset  [Space] pause  [Esc] quit",
         ]
         for i, text in enumerate(lines):
             screen.blit(font.render(text, True, HUD_COLOR), (10, 10 + i * 20))
