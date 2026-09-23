@@ -5,6 +5,8 @@ every other body with real inverse-square gravity (velocity-Verlet
 integration, vectorized with NumPy), so orbits, slingshots, collisions and
 ejections all emerge from the physics.
 
+**Website:** https://shane-stevens-git.github.io/GravSim/
+
 ## Download (Windows)
 
 Grab `GravSim.exe` from the repo's **Releases** page (or from the latest

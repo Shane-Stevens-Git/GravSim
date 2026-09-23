@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GravSim – 2D Gravity Sandbox</title>
+<meta name="description" content="GravSim is a free 2D gravity sandbox for Windows. Throw planets, stars and spacecraft and watch real n-body gravity take over.">
+<meta property="og:title" content="GravSim – 2D Gravity Sandbox">
+<meta property="og:description" content="Throw planets, stars and spacecraft and watch real n-body gravity take over.">
+<meta property="og:image" content="img/orbits.webp">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='7' fill='%23ffcc44'/%3E%3Cellipse cx='16' cy='16' rx='14' ry='6' fill='none' stroke='%2378aaff' stroke-width='2' transform='rotate(-25 16 16)'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #070a14;
+  --bg-2: #0b1020;
+  --panel: #0e1322;
+  --panel-2: #131a2e;
+  --border: #1f2842;
+  --text: #dee3f0;
+  --dim: #8a93ad;
+  --accent: #78aaff;
+  --accent-2: #9fc2ff;
+  --sun: #ffcc44;
+  --green: #6fdc9a;
+  --amber: #ffb35c;
+  --key: #242c46;
+  --radius: 14px;
+  --max: 1120px;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.6 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-2); text-decoration: underline; }
+img { max-width: 100%; height: auto; display: block; }
+.wrap { max-width: var(--max); margin: 0 auto; padding: 0 20px; }
+kbd {
+  display: inline-block; min-width: 1.7em; padding: 1px 7px; text-align: center;
+  font: 500 0.8em/1.6 "JetBrains Mono", ui-monospace, monospace; color: var(--text);
+  background: var(--key); border: 1px solid #34406a; border-bottom-width: 2px; border-radius: 5px;
+  white-space: nowrap;
+}
+code {
+  font: 500 0.88em "JetBrains Mono", ui-monospace, monospace;
+  background: var(--panel-2); border: 1px solid var(--border); padding: 1px 6px; border-radius: 5px;
+}
+pre {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 16px; overflow-x: auto; margin: 12px 0;
+}
+pre code { background: none; border: 0; padding: 0; font-size: 0.9em; line-height: 1.7; }
+
+/* ---------- nav ---------- */
+nav {
+  position: sticky; top: 0; z-index: 20;
+  background: rgba(7, 10, 20, 0.82); backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+nav .wrap { display: flex; align-items: center; gap: 24px; height: 60px; }
+.logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; color: var(--text); letter-spacing: 0.3px; }
+.logo:hover { text-decoration: none; color: var(--text); }
+.logo svg { width: 26px; height: 26px; }
+nav ul { display: flex; gap: 22px; list-style: none; margin: 0 0 0 auto; padding: 0; }
+nav ul a { color: var(--dim); font-size: 14.5px; font-weight: 500; }
+nav ul a:hover { color: var(--text); text-decoration: none; }
+nav .nav-dl { padding: 7px 14px; font-size: 14px; }
+@media (max-width: 820px) { nav ul { display: none; } nav .nav-dl { margin-left: auto; } }
+
+/* ---------- buttons ---------- */
+.btn {
+  display: inline-flex; align-items: center; gap: 10px; justify-content: center;
+  padding: 13px 22px; border-radius: 10px; font-weight: 600; font-size: 16px;
+  border: 1px solid transparent; cursor: pointer; transition: transform .12s, background .15s, box-shadow .15s;
+}
+.btn:hover { text-decoration: none; transform: translateY(-1px); }
+.btn svg { width: 20px; height: 20px; flex: none; }
+.btn-primary {
+  background: linear-gradient(180deg, #86b4ff, #5f93f5); color: #07102a;
+  box-shadow: 0 6px 24px rgba(120, 170, 255, 0.28), inset 0 1px 0 rgba(255,255,255,.35);
+}
+.btn-primary:hover { color: #07102a; box-shadow: 0 8px 30px rgba(120, 170, 255, 0.4), inset 0 1px 0 rgba(255,255,255,.35); }
+.btn-ghost { background: var(--panel); border-color: var(--border); color: var(--text); }
+.btn-ghost:hover { background: var(--panel-2); color: var(--text); }
+
+/* ---------- hero ---------- */
+.hero { position: relative; overflow: hidden; padding: 84px 0 40px; }
+#sky { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
+.hero::after {
+  content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: radial-gradient(ellipse at 50% 30%, transparent 0%, rgba(7,10,20,.35) 55%, var(--bg) 100%);
+}
+.hero .wrap { position: relative; z-index: 2; text-align: center; }
+.eyebrow {
+  display: inline-block; font-size: 13px; font-weight: 600; color: var(--accent);
+  background: rgba(120,170,255,.1); border: 1px solid rgba(120,170,255,.25);
+  padding: 4px 12px; border-radius: 999px; margin-bottom: 22px;
+}
+h1 { filter: drop-shadow(0 2px 14px rgba(7,10,20,.85)); font-size: clamp(40px, 7vw, 68px); line-height: 1.05; margin: 0 0 18px; font-weight: 800; letter-spacing: -1.5px; }
+h1 .grad { background: linear-gradient(90deg, var(--sun), #ff9b5c 45%, var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.lede { text-shadow: 0 1px 12px rgba(7,10,20,.9); font-size: clamp(17px, 2.2vw, 20px); color: var(--dim); max-width: 640px; margin: 0 auto 32px; }
+.cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+.meta span { white-space: nowrap; }
+.meta { margin-top: 14px; font-size: 13.5px; color: var(--dim); }
+.meta span + span::before { content: "·"; margin: 0 8px; color: #4a5474; }
+.shot-hero {
+  margin: 56px auto 0; max-width: 1040px; border-radius: 16px; overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(120,170,255,.06), 0 0 120px rgba(120,170,255,.08);
+}
+
+/* ---------- sections ---------- */
+section { padding: 84px 0; }
+section.alt { background: linear-gradient(180deg, var(--bg-2), var(--bg)); border-top: 1px solid var(--border); }
+h2 { font-size: clamp(28px, 4vw, 38px); margin: 0 0 10px; letter-spacing: -0.6px; line-height: 1.15; }
+h3 { font-size: 18px; margin: 0 0 8px; }
+.sub { color: var(--dim); font-size: 17px; margin: 0 0 44px; max-width: 680px; }
+.label { font-size: 13px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--accent); margin-bottom: 10px; }
+
+/* features */
+.grid { display: grid; gap: 18px; grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 580px) { .grid { grid-template-columns: 1fr; } }
+.card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 22px; transition: border-color .15s, transform .15s;
+}
+.card:hover { border-color: #2f3b62; transform: translateY(-2px); }
+.card p { margin: 0; color: var(--dim); font-size: 15px; }
+.icon {
+  width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; margin-bottom: 14px;
+  background: rgba(120,170,255,.1); color: var(--accent);
+}
+.icon svg { width: 22px; height: 22px; }
+.icon.sun { background: rgba(255,204,68,.1); color: var(--sun); }
+.icon.green { background: rgba(111,220,154,.1); color: var(--green); }
+.icon.amber { background: rgba(255,179,92,.1); color: var(--amber); }
+
+/* gallery */
+.gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px; }
+@media (max-width: 760px) { .gallery { grid-template-columns: 1fr; } }
+figure { margin: 0; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+figure a { display: block; }
+figure img { width: 100%; height: auto; aspect-ratio: 16 / 10; object-fit: cover; transition: transform .3s; }
+figure a:hover img { transform: scale(1.02); }
+figcaption { padding: 14px 18px 16px; font-size: 14.5px; color: var(--dim); }
+figcaption b { color: var(--text); display: block; font-size: 15.5px; margin-bottom: 2px; }
+
+/* install */
+.install { display: grid; grid-template-columns: 1.15fr 1fr; gap: 22px; align-items: start; }
+.install > * { min-width: 0; }
+@media (max-width: 860px) { .install { grid-template-columns: 1fr; } }
+.box { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; }
+.box.feature { border-color: rgba(120,170,255,.35); box-shadow: 0 0 60px rgba(120,170,255,.07); }
+.box h3 { display: flex; align-items: center; gap: 10px; font-size: 20px; margin-bottom: 4px; }
+.box h3 svg { width: 22px; height: 22px; color: var(--accent); }
+.box .note { color: var(--dim); font-size: 14.5px; margin: 0 0 18px; }
+ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 18px 0 0; }
+ol.steps li { counter-increment: s; position: relative; padding: 0 0 16px 42px; color: var(--text); font-size: 15.5px; }
+ol.steps li::before {
+  content: counter(s); position: absolute; left: 0; top: 0; width: 28px; height: 28px; border-radius: 50%;
+  background: var(--panel-2); border: 1px solid #2f3b62; color: var(--accent); font-weight: 700; font-size: 14px;
+  display: grid; place-items: center;
+}
+ol.steps li span { color: var(--dim); display: block; font-size: 14.5px; }
+.callout {
+  display: flex; gap: 12px; background: rgba(255,179,92,.07); border: 1px solid rgba(255,179,92,.25);
+  border-radius: 10px; padding: 14px 16px; font-size: 14.5px; color: #e9d5bd; margin-top: 6px;
+}
+.callout svg { width: 20px; height: 20px; flex: none; color: var(--amber); margin-top: 2px; }
+.reqs { display: grid; grid-template-columns: auto 1fr; gap: 6px 18px; font-size: 14.5px; margin: 18px 0 0; }
+.reqs dt { color: var(--dim); }
+.reqs dd { margin: 0; }
+
+/* quick start */
+.qs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; counter-reset: q; }
+@media (max-width: 900px) { .qs { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 520px) { .qs { grid-template-columns: 1fr; } }
+.qs .card { counter-increment: q; }
+.qs .card::before {
+  content: "0" counter(q); display: block; font: 700 13px "JetBrains Mono", monospace; color: var(--accent); margin-bottom: 10px;
+}
+
+/* scenes */
+.scenes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+@media (max-width: 900px) { .scenes { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 580px) { .scenes { grid-template-columns: 1fr; } }
+.scene { display: flex; gap: 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+.scene kbd { align-self: flex-start; margin-top: 2px; }
+.scene b { display: block; font-size: 15.5px; }
+.scene p { margin: 2px 0 0; color: var(--dim); font-size: 14px; }
+
+/* controls */
+.tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+.tab {
+  font: 600 14px Inter, sans-serif; color: var(--dim); background: var(--panel); border: 1px solid var(--border);
+  padding: 8px 16px; border-radius: 8px; cursor: pointer;
+}
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] { color: #07102a; background: var(--accent); border-color: var(--accent); }
+.panel { display: none; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.panel.on { display: block; }
+table { width: 100%; border-collapse: collapse; font-size: 15px; }
+td { padding: 11px 18px; border-top: 1px solid var(--border); vertical-align: top; }
+tr:first-child td { border-top: 0; }
+td:first-child { width: 34%; white-space: nowrap; }
+td:last-child { color: #c2c9dc; }
+@media (max-width: 620px) { td:first-child { white-space: normal; width: 42%; } td { padding: 10px 12px; } }
+
+/* faq */
+details { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 0 20px; margin-bottom: 10px; }
+summary { cursor: pointer; list-style: none; padding: 16px 0; font-weight: 600; display: flex; justify-content: space-between; gap: 12px; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: "+"; color: var(--accent); font-size: 20px; line-height: 1; transition: transform .2s; }
+details[open] summary::after { transform: rotate(45deg); }
+details p { margin: 0 0 16px; color: var(--dim); font-size: 15px; }
+
+/* final cta */
+.final { text-align: center; }
+.final .box { padding: 48px 28px; background: radial-gradient(ellipse at top, rgba(120,170,255,.12), transparent 70%), var(--panel); }
+
+footer { border-top: 1px solid var(--border); padding: 28px 0 40px; color: var(--dim); font-size: 14px; }
+footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="logo" href="#top">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="6.5" fill="#ffcc44"/><ellipse cx="16" cy="16" rx="14" ry="6" fill="none" stroke="#78aaff" stroke-width="1.8" transform="rotate(-25 16 16)"/><circle cx="28.3" cy="10.3" r="2.2" fill="#78aaff"/></svg>
+      GravSim
+    </a>
+    <ul>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#gallery">Screenshots</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#controls">Controls</a></li>
+      <li><a href="#faq">FAQ</a></li>
+      <li><a href="https://github.com/Shane-Stevens-Git/GravSim">GitHub</a></li>
+    </ul>
+    <a class="btn btn-primary nav-dl" href="https://github.com/Shane-Stevens-Git/GravSim/releases/latest/download/GravSim.exe">Download</a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <canvas id="sky" aria-hidden="true"></canvas>
+  <div class="wrap">
+    <div class="eyebrow">Free · Windows · Open source</div>
+    <h1>Throw a planet.<br><span class="grad">Watch gravity win.</span></h1>
+    <p class="lede">GravSim is a 2D gravity sandbox. Every body pulls on every other one with real inverse-square gravity, so orbits, slingshots, collisions and escapes all come out of the physics.</p>
+    <div class="cta">
+      <a class="btn btn-primary" href="https://github.com/Shane-Stevens-Git/GravSim/releases/latest/download/GravSim.exe">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 19h16"/></svg>
+        Download for Windows
+      </a>
+      <a class="btn btn-ghost" href="#install">Mac &amp; Linux</a>
+    </div>
+    <div class="meta"><span>GravSim.exe</span><span>Windows 10 &amp; 11 (64-bit)</span><span>Nothing to install</span></div>
+    <div class="shot-hero"><img src="img/orbits.webp" width="1280" height="800" alt="GravSim showing the inner solar system with every planet's predicted orbit drawn in its own color"></div>
+  </div>
+</header>
+
+<!-- ============ FEATURES ============ -->
+<section id="features">
+  <div class="wrap">
+    <div class="label">Features</div>
+    <h2>A small universe you can poke</h2>
+    <p class="sub">Click, drag and let go. Everything after that is Newton's law of gravity, run hundreds of times a second.</p>
+    <div class="grid">
+      <div class="card">
+        <div class="icon sun"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></div>
+        <h3>Real n-body gravity</h3>
+        <p>Every body pulls on every other body. Velocity-Verlet integration keeps orbits stable for a long time, and NumPy handles thousands of particles in real time.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19 19 5"/><path d="M11 5h8v8"/><circle cx="5" cy="19" r="2"/></svg></div>
+        <h3>Throw anything</h3>
+        <p>Asteroids, moons, planets, gas giants, red dwarfs and spacecraft. Scroll to resize, and an aim preview shows the path before you let go.</p>
+      </div>
+      <div class="card">
+        <div class="icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8" cy="12" r="4"/><circle cx="17" cy="12" r="3"/><path d="M20 5l1-1M21 9h1.5M20 19l1 1"/></svg></div>
+        <h3>Three kinds of collision</h3>
+        <p>Merge, shatter into debris, or bounce. Stray too close to a star and its tides tear you apart at the Roche limit.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 12 20 4l-5 16-3-7-8-1Z"/></svg></div>
+        <h3>Spacecraft with autopilot</h3>
+        <p>Hold a Lagrange point, make a Hohmann transfer to another planet, rendezvous and enter orbit, or fly by hand with the arrow keys.</p>
+      </div>
+      <div class="card">
+        <div class="icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="12" rx="9" ry="5"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 3v2M12 19v2"/></svg></div>
+        <h3>Orbit tools</h3>
+        <p>Click a body for its period, eccentricity and closest and farthest distance. Show every orbit at once, mark L1–L5, or drop bodies onto perfect circular orbits.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg></div>
+        <h3>Rotating camera</h3>
+        <p>Spin the view with a planet so it stands still. Hidden patterns show up, like asteroids tracing tadpole loops around L4 and L5.</p>
+      </div>
+      <div class="card">
+        <div class="icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 19 2 12l9-7v14Z"/><path d="M22 19l-9-7 9-7v14Z"/></svg></div>
+        <h3>Rewind, and exact replays</h3>
+        <p>Hold <kbd>Z</kbd> to rewind up to 60 seconds. Every run is deterministic, so a scene plays out the same way every time.</p>
+      </div>
+      <div class="card">
+        <div class="icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 17c3-6 6-6 9 0s6 6 9 0"/><path d="M3 9c3-4 6-4 9 0s6 4 9 0"/></svg></div>
+        <h3>See the invisible</h3>
+        <p>Gravity-field heatmap with contour lines, an energy and momentum graph, trails, glow, and synthesized collision sounds.</p>
+      </div>
+      <div class="card">
+        <div class="icon sun"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></div>
+        <h3>Change the laws</h3>
+        <p>Live sliders for gravity strength, softening, physics rate, bounciness, shatter energy and more. Save and load scenes to share setups.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ GALLERY ============ -->
+<section id="gallery" class="alt">
+  <div class="wrap">
+    <div class="label">Screenshots</div>
+    <h2>What it looks like</h2>
+    <p class="sub">All captured straight from the app. Click any image for full size.</p>
+    <div class="gallery">
+      <figure><a href="img/rotating.webp"><img src="img/rotating.webp" width="1280" height="800" alt="Rotating camera on the Lagrange points scene"></a>
+        <figcaption><b>Rotating camera</b>The view turns with the giant planet. Asteroids loop around L4 and L5 while two probes use thrusters to hold L1 and L2.</figcaption></figure>
+      <figure><a href="img/galaxy.webp"><img src="img/galaxy.webp" width="1280" height="800" alt="Two disk galaxies passing each other"></a>
+        <figcaption><b>Galaxy collision</b>2,300 stars in two disk galaxies on a close fly-by, pulling stars out of each other.</figcaption></figure>
+      <figure><a href="img/shatter.webp"><img src="img/shatter.webp" width="1280" height="800" alt="A planet torn apart by the sun's tides"></a>
+        <figcaption><b>Shatter mode</b>A planet strays inside the sun's Roche limit and is shredded into a stream of debris.</figcaption></figure>
+      <figure><a href="img/traffic.webp"><img src="img/traffic.webp" width="1280" height="800" alt="Six spacecraft touring three planets"></a>
+        <figcaption><b>Space traffic</b>Six autopiloted ships travel between three planets, orbiting each one before flying on to the next.</figcaption></figure>
+      <figure><a href="img/field.webp"><img src="img/field.webp" width="1280" height="800" alt="Gravity field overlay around a binary star"></a>
+        <figcaption><b>Gravity field</b>The potential wells of a binary star, drawn as a heatmap with contour lines.</figcaption></figure>
+      <figure><a href="img/orbits.webp"><img src="img/orbits.webp" width="1280" height="800" alt="Inner solar system with all orbits shown"></a>
+        <figcaption><b>All orbits</b>Press <kbd>A</kbd> and every body's predicted orbit is drawn in its own color.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<!-- ============ INSTALL ============ -->
+<section id="install">
+  <div class="wrap">
+    <div class="label">Install</div>
+    <h2>Get GravSim</h2>
+    <p class="sub">On Windows it's a single file: download it and double-click. There's no installer and no Python needed.</p>
+    <div class="install">
+      <div class="box feature">
+        <h3><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.5 10.5 4.4v7.1H3V5.5Zm0 13 7.5 1.1v-7H3v5.9Zm8.4 1.2L21 21v-8.4h-9.6v7.1Zm0-15.4v7.2H21V3l-9.6 1.3Z"/></svg>Windows</h3>
+        <p class="note">Windows 10 or 11, 64-bit.</p>
+        <a class="btn btn-primary" href="https://github.com/Shane-Stevens-Git/GravSim/releases/latest/download/GravSim.exe">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 19h16"/></svg>
+          Download GravSim.exe
+        </a>
+        <ol class="steps">
+          <li>Download <code>GravSim.exe</code>.<span>Save it anywhere you like, such as your Desktop or a GravSim folder.</span></li>
+          <li>Double-click it.<span>The first launch takes a few seconds while it unpacks. Later launches are quicker.</span></li>
+          <li>If Windows shows "Windows protected your PC", click <b>More info</b>, then <b>Run anyway</b>.<span>This appears because the app isn't code-signed. It's a free hobby project, and the full source code is on GitHub.</span></li>
+        </ol>
+        <div class="callout">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg>
+          <div>Scene files are saved in a <code>saves</code> folder next to the .exe. To uninstall, delete the .exe and that folder.</div>
+        </div>
+        <p class="note" style="margin:16px 0 0">Older versions are on the <a href="https://github.com/Shane-Stevens-Git/GravSim/releases">Releases page</a>.</p>
+      </div>
+
+      <div class="box">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 6-6 6 6 6"/><path d="m16 6 6 6-6 6"/></svg>macOS, Linux, or from source</h3>
+        <p class="note">You need Python 3.9 or newer. It works anywhere pygame and NumPy run.</p>
+<pre><code>git clone https://github.com/Shane-Stevens-Git/GravSim.git
+cd GravSim
+pip install -r requirements.txt
+python main.py</code></pre>
+        <p class="note" style="margin:14px 0 0">No git? Use <a href="https://github.com/Shane-Stevens-Git/GravSim/archive/refs/heads/main.zip">Download ZIP</a>, unzip it, and run the last two commands in that folder. On macOS and Linux use <code>pip3</code> and <code>python3</code> if <code>python</code> isn't found.</p>
+        <p class="note" style="margin:14px 0 0">To build your own .exe on Windows, run <code>build_exe.bat</code>. The result appears in <code>dist\GravSim.exe</code>.</p>
+        <dl class="reqs">
+          <dt>Display</dt><dd>1100 × 720 or larger (the window can be resized; F11 for fullscreen)</dd>
+          <dt>Input</dt><dd>Mouse with a scroll wheel, and a keyboard</dd>
+          <dt>Internet</dt><dd>Not needed. Everything runs offline</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ QUICK START ============ -->
+<section class="alt">
+  <div class="wrap">
+    <div class="label">Quick start</div>
+    <h2>Your first orbit in a minute</h2>
+    <p class="sub">The app opens on a sun and one planet. The rest is up to you.</p>
+    <div class="qs">
+      <div class="card"><h3>Pick a body</h3><p>Press <kbd>1</kbd>–<kbd>6</kbd> or click a card at the bottom. Scroll to make it bigger or smaller.</p></div>
+      <div class="card"><h3>Throw it</h3><p>Press where it should start, drag the way it should go, and let go. Drag sideways to the sun for an orbit.</p></div>
+      <div class="card"><h3>Inspect it</h3><p>Click any body to see its orbit, change its mass or color, or have the camera follow it with <kbd>G</kbd>.</p></div>
+      <div class="card"><h3>Try a scene</h3><p>Press <kbd>P</kbd> for nine preset scenes, from a binary star to colliding galaxies.</p></div>
+    </div>
+    <p class="note" style="color:var(--dim);margin:22px 0 0;font-size:15px">Tip: the on-screen HUD shows the circular-orbit speed where you're aiming. Throw at about that speed for a circle; about 1.4× that speed escapes.</p>
+  </div>
+</section>
+
+<!-- ============ SCENES ============ -->
+<section id="scenes">
+  <div class="wrap">
+    <div class="label">Scenes</div>
+    <h2>Nine ready-made scenes</h2>
+    <p class="sub">Press <kbd>P</kbd>, then a number. <kbd>R</kbd> restarts the current scene.</p>
+    <div class="scenes">
+      <div class="scene"><kbd>1</kbd><div><b>Sun &amp; planet</b><p>The default: one planet on an elliptical orbit.</p></div></div>
+      <div class="scene"><kbd>2</kbd><div><b>Inner solar system</b><p>Four planets and a moon around Earth.</p></div></div>
+      <div class="scene"><kbd>3</kbd><div><b>Binary star</b><p>A planet on a stable orbit around both stars.</p></div></div>
+      <div class="scene"><kbd>4</kbd><div><b>Figure-eight</b><p>Three equal stars sharing one figure-8 path, until it breaks up.</p></div></div>
+      <div class="scene"><kbd>5</kbd><div><b>Asteroid belt</b><p>300 asteroids; a giant's 2:1 resonance stirs up the middle.</p></div></div>
+      <div class="scene"><kbd>6</kbd><div><b>Lagrange points</b><p>Stable L4/L5 tadpoles, unstable L1–L3, and probes holding station.</p></div></div>
+      <div class="scene"><kbd>7</kbd><div><b>Galaxy collision</b><p>2,300 stars, tidal tails and bridges, and the cores merge.</p></div></div>
+      <div class="scene"><kbd>8</kbd><div><b>Shatter demo</b><p>A head-on planet smash, then the sun's tides shred what falls in.</p></div></div>
+      <div class="scene"><kbd>9</kbd><div><b>Space traffic</b><p>Six ships touring three planets, steering around everything.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CONTROLS ============ -->
+<section id="controls" class="alt">
+  <div class="wrap">
+    <div class="label">Controls</div>
+    <h2>Every key</h2>
+    <p class="sub">You don't need to memorize these. Everything can also be clicked, and the in-app Controls panel (<kbd>H</kbd>, <kbd>Tab</kbd> to switch pages) lists them too.</p>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-p="p-bodies">Bodies</button>
+      <button class="tab" role="tab" aria-selected="false" data-p="p-view">View</button>
+      <button class="tab" role="tab" aria-selected="false" data-p="p-sim">Simulation</button>
+      <button class="tab" role="tab" aria-selected="false" data-p="p-craft">Spacecraft</button>
+      <button class="tab" role="tab" aria-selected="false" data-p="p-files">Files</button>
+    </div>
+
+    <div class="panel on" id="p-bodies" role="tabpanel"><table>
+      <tr><td><kbd>1</kbd>–<kbd>6</kbd> or click a card</td><td>Choose body type: Asteroid, Moon, Planet, Gas giant, Red dwarf, Spacecraft</td></tr>
+      <tr><td>Left-drag, release</td><td>Throw: press where it starts, drag the way it should go</td></tr>
+      <tr><td>Right-click</td><td>Cancel a throw</td></tr>
+      <tr><td>Scroll</td><td>Size of the next body (mass scales with it)</td></tr>
+      <tr><td><kbd>Shift</kbd> + scroll</td><td>Mass of the next body only (denser or lighter)</td></tr>
+      <tr><td>Click a body</td><td>Select it: the inspector shows its orbit and lets you change its mass and color</td></tr>
+      <tr><td><kbd>Q</kbd></td><td>Select tool: clicks only select, never throw; drag to pan</td></tr>
+      <tr><td><kbd>O</kbd></td><td>Orbit tool: a click places a body on a circular orbit (<kbd>Shift</kbd>+click for the other direction)</td></tr>
+      <tr><td><kbd>[</kbd> <kbd>]</kbd> &nbsp; <kbd>Del</kbd></td><td>Lower / raise the selected body's mass, delete it</td></tr>
+      <tr><td><kbd>B</kbd></td><td>Add a ring of particles around the selected body</td></tr>
+      <tr><td><kbd>C</kbd></td><td>Clear the bodies you threw</td></tr>
+    </table></div>
+
+    <div class="panel" id="p-view" role="tabpanel"><table>
+      <tr><td><kbd>V</kbd></td><td>Camera: follow, then rotate with the selected body, then fixed</td></tr>
+      <tr><td><kbd>G</kbd></td><td>Follow the selected body (again: back to the sun)</td></tr>
+      <tr><td><kbd>Ctrl</kbd> + scroll, <kbd>+</kbd> <kbd>-</kbd></td><td>Zoom in / out (<kbd>0</kbd> resets)</td></tr>
+      <tr><td>Middle-drag</td><td>Pan the view</td></tr>
+      <tr><td><kbd>A</kbd></td><td>Show every body's predicted orbit</td></tr>
+      <tr><td><kbd>K</kbd></td><td>Show Lagrange points L1–L5</td></tr>
+      <tr><td><kbd>L</kbd> / <kbd>T</kbd></td><td>Trails / aim preview</td></tr>
+      <tr><td><kbd>W</kbd></td><td>Gravity field overlay</td></tr>
+      <tr><td><kbd>E</kbd></td><td>Energy &amp; momentum graph</td></tr>
+      <tr><td><kbd>H</kbd> / <kbd>S</kbd> / <kbd>Tab</kbd></td><td>Show or hide the controls panel / sun panel; next controls page</td></tr>
+      <tr><td><kbd>F11</kbd></td><td>Fullscreen (the window can also be resized)</td></tr>
+    </table></div>
+
+    <div class="panel" id="p-sim" role="tabpanel"><table>
+      <tr><td><kbd>Space</kbd> / <kbd>N</kbd></td><td>Pause / step one frame</td></tr>
+      <tr><td><kbd>,</kbd> <kbd>.</kbd></td><td>Slower / faster (0.25× to 8×)</td></tr>
+      <tr><td><kbd>Z</kbd> (hold)</td><td>Rewind, up to 60 seconds back</td></tr>
+      <tr><td><kbd>M</kbd></td><td>Collision mode: merge, shatter or bounce</td></tr>
+      <tr><td><kbd>F</kbd></td><td>Pin / unpin the sun</td></tr>
+      <tr><td><kbd>P</kbd></td><td>Scenes menu</td></tr>
+      <tr><td><kbd>R</kbd></td><td>Reset the scene</td></tr>
+      <tr><td><kbd>X</kbd></td><td>Sound on / off</td></tr>
+      <tr><td>Physics tab</td><td>Live sliders: gravity, softening, physics rate, trail length, bounciness, shatter energy, Roche limit, launch strength</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Quit</td></tr>
+    </table></div>
+
+    <div class="panel" id="p-craft" role="tabpanel"><table>
+      <tr><td>Hold</td><td>Station-keeping: holds a shown Lagrange point, or a circular orbit at its current distance</td></tr>
+      <tr><td>Transfer</td><td>Click a planet: waits for the launch window, makes a Hohmann transfer, then rendezvous</td></tr>
+      <tr><td>Follow</td><td>Click a body: rendezvous and keep station beside it, or enter orbit if it's massive enough</td></tr>
+      <tr><td>Manual</td><td>Fly with the arrow keys: <kbd>↑</kbd> thrust, <kbd>↓</kbd> brake, <kbd>←</kbd> <kbd>→</kbd> turn</td></tr>
+      <tr><td>Off</td><td>Engine off, just coasting</td></tr>
+      <tr><td>Fuel</td><td>Unlimited, but the delta-v spent is shown in the inspector</td></tr>
+    </table></div>
+
+    <div class="panel" id="p-files" role="tabpanel"><table>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd> / <kbd>Ctrl</kbd>+<kbd>O</kbd></td><td>Save / load a scene file</td></tr>
+      <tr><td><kbd>F5</kbd> / <kbd>F9</kbd></td><td>Quick save / quick load</td></tr>
+      <tr><td>Where</td><td>A <code>saves</code> folder next to the app. Scene files are plain JSON and can be shared</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<!-- ============ FAQ ============ -->
+<section id="faq">
+  <div class="wrap" style="max-width:820px">
+    <div class="label">FAQ</div>
+    <h2>Questions</h2>
+    <p class="sub"></p>
+    <details><summary>Is it free?</summary><p>Yes. GravSim is a hobby project, and the source code is on GitHub.</p></details>
+    <details><summary>Why does Windows warn me when I open it?</summary><p>Windows SmartScreen warns about any app that isn't code-signed with a paid certificate. Click <b>More info</b>, then <b>Run anyway</b>. If you'd rather not, you can read the source and run it with Python, or build the .exe yourself with <code>build_exe.bat</code>.</p></details>
+    <details><summary>Does it work on Mac or Linux?</summary><p>There's no prebuilt app for those yet, but it runs from source on both. See <a href="#install">Install</a>: it's four commands.</p></details>
+    <details><summary>How realistic is the physics?</summary><p>Gravity is real Newtonian inverse-square attraction between every pair of bodies, integrated with velocity Verlet. That's the same method many astronomy codes use. Distances and masses are in "screen units" instead of kilometers, so it's to scale with itself but not with the real solar system.</p></details>
+    <details><summary>Why did my planet fly away?</summary><p>It was thrown faster than escape speed, which is about 1.4× the circular-orbit speed shown in the HUD. Hold <kbd>Z</kbd> to rewind and try a gentler throw, or use the Orbit tool (<kbd>O</kbd>) for a perfect circle.</p></details>
+    <details><summary>It's slow with lots of bodies. What can I do?</summary><p>Bodies you throw all pull on each other, so the cost grows fast. Particles (belts, rings, galaxy stars) only feel gravity and don't pull back, which is why thousands of them still run smoothly. In the Physics tab you can also lower the physics rate.</p></details>
+    <details><summary>Does it need the internet?</summary><p>No. Everything, including the sounds, is generated on your computer.</p></details>
+    <details><summary>How do I uninstall it?</summary><p>Delete <code>GravSim.exe</code> and the <code>saves</code> folder next to it. It doesn't install anything else.</p></details>
+  </div>
+</section>
+
+<section class="final" style="padding-top:0">
+  <div class="wrap">
+    <div class="box">
+      <h2>Ready to make some orbits?</h2>
+      <p class="sub" style="margin:0 auto 28px">One file, no setup. Free.</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://github.com/Shane-Stevens-Git/GravSim/releases/latest/download/GravSim.exe">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 19h16"/></svg>
+          Download for Windows
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/Shane-Stevens-Git/GravSim">View on GitHub</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>GravSim by Shane Stevens</span>
+    <span><a href="https://github.com/Shane-Stevens-Git/GravSim">Source</a> &nbsp;·&nbsp; <a href="https://github.com/Shane-Stevens-Git/GravSim/releases">Releases</a> &nbsp;·&nbsp; <a href="https://github.com/Shane-Stevens-Git/GravSim/issues">Report a bug</a></span>
+  </div>
+</footer>
+
+<script>
+// Controls tabs
+document.querySelectorAll('.tab').forEach(function (t) {
+  t.addEventListener('click', function () {
+    document.querySelectorAll('.tab').forEach(function (x) { x.setAttribute('aria-selected', x === t); });
+    document.querySelectorAll('.panel').forEach(function (p) { p.classList.toggle('on', p.id === t.dataset.p); });
+  });
+});
+
+// Hero background: a tiny live gravity sim (sun + a few planets with trails).
+(function () {
+  var c = document.getElementById('sky'), ctx = c.getContext('2d');
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var W, H, dpr, stars = [], bodies = [], G = 1, M = 4e6;
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = c.clientWidth; H = c.clientHeight;
+    c.width = W * dpr; c.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    stars = [];
+    for (var i = 0; i < W * H / 2600; i++) stars.push([Math.random() * W, Math.random() * H, Math.random() * 1.2 + 0.2, Math.random()]);
+  }
+  var TILT = 0.42;                     // orbits are drawn as a tilted disc
+  function init() {
+    var cols = ['#78aaff', '#e8a860', '#8fe0b0', '#ff7a5c', '#c9b2ff'];
+    var radii = [170, 260, 360, 470, 600], sizes = [3, 5, 3.5, 4, 2.5];
+    bodies = radii.map(function (r, i) {
+      var a = Math.random() * Math.PI * 2, v = Math.sqrt(G * M / r) * (0.92 + 0.08 * Math.random());
+      return { x: Math.cos(a) * r, y: Math.sin(a) * r, vx: -Math.sin(a) * v, vy: Math.cos(a) * v,
+               col: cols[i], size: sizes[i], trail: [] };
+    });
+  }
+  function step(dt) {
+    bodies.forEach(function (b) {
+      var d2 = b.x * b.x + b.y * b.y, d = Math.sqrt(d2), f = G * M / d2;
+      b.vx -= f * b.x / d * dt; b.vy -= f * b.y / d * dt;
+      b.x += b.vx * dt; b.y += b.vy * dt;
+    });
+  }
+  function record() {
+    bodies.forEach(function (b) { b.trail.push(b.x, b.y); if (b.trail.length > 360) b.trail.splice(0, 2); });
+  }
+  function draw(t) {
+    ctx.clearRect(0, 0, W, H);
+    for (var i = 0; i < stars.length; i++) {
+      var s = stars[i]; ctx.globalAlpha = 0.35 + 0.35 * Math.sin(t / 900 + s[3] * 20);
+      ctx.fillStyle = '#cfd8ff'; ctx.fillRect(s[0], s[1], s[2], s[2]);
+    }
+    var cx = W / 2, cy = Math.min(H * 0.3, 290);
+    ctx.globalAlpha = 0.5;
+    var g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 60);
+    g.addColorStop(0, 'rgba(255,204,68,.5)'); g.addColorStop(1, 'rgba(255,204,68,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 60, 0, 7); ctx.fill();
+    ctx.fillStyle = '#ffcc44'; ctx.beginPath(); ctx.arc(cx, cy, 11, 0, 7); ctx.fill();
+    ctx.lineWidth = 1.3;
+    bodies.forEach(function (b) {
+      var tr = b.trail;
+      for (var k = 2; k < tr.length; k += 2) {
+        ctx.strokeStyle = b.col; ctx.globalAlpha = 0.45 * k / tr.length;
+        ctx.beginPath(); ctx.moveTo(cx + tr[k - 2], cy + tr[k - 1] * TILT); ctx.lineTo(cx + tr[k], cy + tr[k + 1] * TILT); ctx.stroke();
+      }
+      ctx.globalAlpha = 0.8; ctx.fillStyle = b.col;
+      ctx.beginPath(); ctx.arc(cx + b.x, cy + b.y * TILT, b.size, 0, 7); ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+  }
+  var last = 0;
+  function loop(t) {
+    var dt = Math.min(0.05, (t - last) / 1000 || 0.016); last = t;
+    for (var i = 0; i < 8; i++) step(dt / 8);
+    record(); draw(t); requestAnimationFrame(loop);
+  }
+  resize(); init();
+  window.addEventListener('resize', resize);
+  for (var i = 0; i < 360; i++) { for (var j = 0; j < 8; j++) step(0.002); record(); }   // start with trails
+  if (reduce) draw(0); else requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
