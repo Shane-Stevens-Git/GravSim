@@ -58,12 +58,13 @@ class Body:
         self.thrust = pygame.Vector2()     # engine acceleration (spacecraft only)
         self.heading = -90.0               # degrees; where a craft's nose points
         self.pilot = None                  # craft.Autopilot for spacecraft
+        self.ring_color = BLACK_HOLE_RING  # black holes: color of the glowing ring
         self.trail = deque(maxlen=PARTICLE_TRAIL_LENGTH if particle else TRAIL_LENGTH)
 
     @property
     def accent(self):
         """Color for glow and trail - a black hole uses its glowing ring."""
-        return BLACK_HOLE_RING if self.kind == "blackhole" else self.color
+        return self.ring_color if self.kind == "blackhole" else self.color
 
     @classmethod
     def glow_surface(cls, radius, color, star):
@@ -100,7 +101,7 @@ class Body:
             self.draw_craft(surface, cx, cy, view)
             return
         if self.kind == "blackhole":
-            pygame.draw.circle(surface, BLACK_HOLE_RING, (cx, cy),
+            pygame.draw.circle(surface, self.ring_color, (cx, cy),
                                r + max(2, r // 4), max(1, r // 6))
             pygame.draw.circle(surface, (0, 0, 0), (cx, cy), r)
         else:

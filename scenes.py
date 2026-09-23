@@ -316,7 +316,7 @@ def to_dict(sc, extra=None):
             "name": b.name, "pos": [b.pos.x, b.pos.y], "vel": [b.vel.x, b.vel.y],
             "mass": b.mass, "radius": b.radius, "color": list(b.color),
             "fixed": b.fixed, "kind": b.kind, "particle": b.particle, "soft": b.soft,
-            "absorbs": b.absorbs, "heading": b.heading,
+            "absorbs": b.absorbs, "heading": b.heading, "ring": list(b.ring_color),
             "pilot": pilot_to_dict(b.pilot, idx) if b.pilot else None,
         } for b in bodies],
     }
@@ -335,6 +335,8 @@ def from_dict(data):
               for d in records]
     for b, d in zip(bodies, records):         # spacecraft: restore autopilots
         b.heading = d.get("heading", b.heading)
+        if d.get("ring"):
+            b.ring_color = tuple(d["ring"])
         if d.get("pilot"):
             b.pilot = pilot_from_dict(d["pilot"], bodies)
     sc = scene(bodies, sun=data.get("sun", 0) or 0, target=data.get("target"),

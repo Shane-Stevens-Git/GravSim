@@ -25,6 +25,7 @@ python main.py
 | **Arrow keys** | Fly the selected spacecraft in Manual mode (Up thrust, Down brake, Left/Right turn) |
 | **Click a body** | Select it: inspector shows its orbit (period, eccentricity, peri/apoapsis) and draws the predicted ellipse |
 | **G** | Camera follows the selected body (again: back to the sun) |
+| **Color swatches** (inspector) | Recolor the selected body - trail and glow follow; for a black hole it recolors the ring. Saved with scenes |
 | **[ / ]**, **Del** | Lower / raise the selected body's mass (x1.5), delete it |
 | **Ctrl + scroll**, **+ / -** | Zoom in / out (0 resets) |
 | **Middle-drag** | Pan the view (switches the camera to fixed) |

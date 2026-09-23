@@ -29,6 +29,11 @@ WARN = (245, 185, 85)
 BAD = (240, 100, 90)
 
 PAD = 12
+
+# Inspector color swatches
+BODY_COLORS = [(255, 110, 110), (255, 160, 80), (255, 215, 90), (170, 230, 110),
+               (90, 210, 140), (90, 210, 220), (100, 170, 255), (150, 130, 255),
+               (210, 130, 255), (255, 130, 200), (235, 235, 245), (150, 155, 170)]
 SIDE_W = 250        # width of the left-hand panels
 
 
@@ -304,7 +309,7 @@ class HUD:
         primary (name or None), speed, dist, el (orbital elements or None), following."""
         w = 320
         craft = info.get("craft")
-        rect = self.panel(surface, (self.w - PAD - w, y, w, 268 + (112 if craft else 0)))
+        rect = self.panel(surface, (self.w - PAD - w, y, w, 298 + (112 if craft else 0)))
         x, ty = rect.x + 14, rect.y + 12
 
         self.star_icon(surface, (x + 6, ty + 9), 6, info["color"], info["kind"])
@@ -353,7 +358,21 @@ class HUD:
         self.text(surface, self.f_num, f"{info['mass']:.4g}", TEXT, (x + 52, ty + 4))
         self.button(surface, (rect.right - 14 - 62, ty, 28, 24), "-", ("sel_mass", 1 / 1.5))
         self.button(surface, (rect.right - 14 - 28, ty, 28, 24), "+", ("sel_mass", 1.5))
-        ty += 34
+        ty += 32
+
+        # Color swatches (for a black hole these recolor its glowing ring)
+        self.text(surface, self.f_label, "Color", DIM, (x, ty + 3))
+        sx = x + 52
+        step = (rect.right - 14 - sx - 9) / (len(BODY_COLORS) - 1)
+        for i, col in enumerate(BODY_COLORS):
+            c = (round(sx + i * step), ty + 11)
+            hit = pygame.Rect(c[0] - 10, c[1] - 11, 20, 22)
+            current = tuple(col) == tuple(info["accent"])
+            if self.hovered(hit) or current:
+                pygame.draw.circle(surface, TEXT if current else DIM, c, 11, 2)
+            pygame.draw.circle(surface, col, c, 8)
+            self.add(hit, ("sel_color", col))
+        ty += 32
 
         bw = (w - 28 - 16) // 3
         self.button(surface, (x, ty, bw, 28), "Unfollow" if info["following"] else "Follow",

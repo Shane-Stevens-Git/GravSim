@@ -536,6 +536,11 @@ class App:
                 self.remove_body(self.selection)
         elif kind == "sel_mass":
             self.scale_selection_mass(arg)
+        elif kind == "sel_color" and self.selection is not None:
+            if self.selection.kind == "blackhole":
+                self.selection.ring_color = tuple(arg)
+            else:
+                self.selection.color = tuple(arg)
         elif kind == "select_tool":
             self.select_tool = not self.select_tool
         elif kind == "pilot":
