@@ -4,6 +4,7 @@ Real inverse-square n-body gravity. Pick a body type (1-5), fine-tune
 its size/mass with the scroll wheel, then click-drag-release to throw it.
 Bodies orbit, collide (merge or bounce), or get flung out of the scene.
 """
+import math
 import random
 from collections import deque
 
@@ -51,19 +52,66 @@ PRESETS = [
 ]
 
 
+# Sun types for the sun panel: (name, mass, radius, color, kind)
+SUN_TYPES = [
+    ("Red dwarf",   4_000,  22, (255, 120, 80),  "star"),
+    ("Yellow star", 10_000, 30, (255, 200, 60),  "star"),
+    ("Blue giant",  25_000, 45, (150, 185, 255), "star"),
+    ("White dwarf", 8_000,  10, (235, 240, 255), "star"),
+    ("Black hole",  40_000, 12, (0, 0, 0),       "blackhole"),
+]
+DEFAULT_SUN = 1
+SUN_MASS_RANGE = (1_000, 100_000)   # sun panel slider (log scale)
+SUN_RADIUS_RANGE = (5, 80)
+BLACK_HOLE_RING = ui.BLACK_HOLE_RING
+
+# --- Camera -------------------------------------------------------------------
+ZOOM_RANGE = (0.1, 5.0)
+ZOOM_STEP = 1.15            # zoom factor per Ctrl+scroll notch or +/- press
+
+
+class View:
+    """Camera: which world point sits at the screen center, and the zoom."""
+
+    def __init__(self):
+        self.screen_center = pygame.Vector2(WIDTH / 2, HEIGHT / 2)
+        self.center = pygame.Vector2(self.screen_center)
+        self.zoom = 1.0
+
+    def to_screen(self, p):
+        return (pygame.Vector2(p) - self.center) * self.zoom + self.screen_center
+
+    def to_world(self, s):
+        return (pygame.Vector2(s) - self.screen_center) / self.zoom + self.center
+
+    def zoom_by(self, factor, screen_pos=None):
+        """Zoom, keeping the world point under screen_pos fixed on screen."""
+        new = min(max(self.zoom * factor, ZOOM_RANGE[0]), ZOOM_RANGE[1])
+        if screen_pos is not None:
+            anchor = self.to_world(screen_pos)
+            self.center = anchor - (pygame.Vector2(screen_pos) - self.screen_center) / new
+        self.zoom = new
+
+
 class Body:
     """A circular mass in the simulation."""
 
     _glow_cache = {}
 
-    def __init__(self, pos, mass, radius, color, vel=(0, 0), fixed=False):
+    def __init__(self, pos, mass, radius, color, vel=(0, 0), fixed=False, kind="body"):
         self.pos = pygame.Vector2(pos)
         self.vel = pygame.Vector2(vel)
         self.mass = float(mass)
         self.radius = int(radius)
         self.color = tuple(int(c) for c in color)
         self.fixed = fixed  # fixed ("pinned") bodies pull on others but never move
+        self.kind = kind    # "body", "star" or "blackhole" (affects drawing only)
         self.trail = deque(maxlen=TRAIL_LENGTH)
+
+    @property
+    def accent(self):
+        """Color for glow and trail - a black hole uses its glowing ring."""
+        return BLACK_HOLE_RING if self.kind == "blackhole" else self.color
 
     @classmethod
     def glow_surface(cls, radius, color):
@@ -80,26 +128,39 @@ class Body:
             cls._glow_cache[key] = surf
         return cls._glow_cache[key]
 
-    def draw(self, surface, cam):
-        cx, cy = round(self.pos.x - cam.x), round(self.pos.y - cam.y)
-        r = self.radius
-        if -r * 3 < cx < WIDTH + r * 3 and -r * 3 < cy < HEIGHT + r * 3:
-            surface.blit(self.glow_surface(r, self.color), (cx - r * 3, cy - r * 3))
+    def draw(self, surface, view):
+        p = view.to_screen(self.pos)
+        cx, cy = round(p.x), round(p.y)
+        r = max(1, round(self.radius * view.zoom))
+        if not (-r * 3 < cx < WIDTH + r * 3 and -r * 3 < cy < HEIGHT + r * 3):
+            return
+        if 2 <= r <= 120:
+            surface.blit(self.glow_surface(r, self.accent), (cx - r * 3, cy - r * 3))
+        if self.kind == "blackhole":
+            pygame.draw.circle(surface, BLACK_HOLE_RING, (cx, cy),
+                               r + max(2, r // 4), max(1, r // 6))
+            pygame.draw.circle(surface, (0, 0, 0), (cx, cy), r)
+        else:
             pygame.draw.circle(surface, self.color, (cx, cy), r)
 
-    def draw_trail(self, surface, cam):
-        """Fading line through recent positions (oldest = dimmest)."""
-        pts = [(x - cam.x, y - cam.y) for x, y in self.trail]
-        n = len(pts)
+    def draw_trail(self, surface, view, offset=(0.0, 0.0)):
+        """Fading line through recent positions (oldest = dimmest).
+        `offset` is added to stored points (used for sun-relative trails)."""
+        n = len(self.trail)
         if n < 2:
             return
+        ox, oy = offset
+        z = view.zoom
+        cx, cy = view.center
+        sx, sy = view.screen_center
+        pts = [((x + ox - cx) * z + sx, (y + oy - cy) * z + sy) for x, y in self.trail]
         for band in range(TRAIL_BANDS):
             a = band * (n - 1) // TRAIL_BANDS
             b = (band + 1) * (n - 1) // TRAIL_BANDS + 1
             if b - a < 2:
                 continue
             t = 0.65 * (band + 1) / TRAIL_BANDS
-            col = [int(bg + (c - bg) * t) for bg, c in zip(BG_COLOR, self.color)]
+            col = [int(bg + (c - bg) * t) for bg, c in zip(BG_COLOR, self.accent)]
             pygame.draw.lines(surface, col, False, pts[a:b])
 
 
@@ -161,7 +222,10 @@ def merge(a, b):
     else:
         a.pos = (a.pos * a.mass + b.pos * b.mass) / m
         a.vel = (a.vel * a.mass + b.vel * b.mass) / m
-    a.color = tuple(int((ca * a.mass + cb * b.mass) / m) for ca, cb in zip(a.color, b.color))
+    if a.kind == "blackhole" or b.kind == "blackhole":
+        a.kind, a.color = "blackhole", (0, 0, 0)     # anything + black hole = black hole
+    else:
+        a.color = tuple(int((ca * a.mass + cb * b.mass) / m) for ca, cb in zip(a.color, b.color))
     a.radius = max(2, round((a.radius ** 3 + b.radius ** 3) ** (1 / 3)))
     a.mass = m
 
@@ -222,7 +286,7 @@ def simulate(bodies, dt, steps, mode):
             bodies[:] = [b for k, b in enumerate(bodies) if k not in gone]
 
 
-def predict_path(bodies, start, vel0, frame_body=None):
+def predict_path(bodies, start, vel0, frame_body=None, test_radius=0):
     """Preview a throw: a massless test particle flown through the n-body
     system (the heaviest bodies move during the preview too).
 
@@ -245,7 +309,7 @@ def predict_path(bodies, start, vel0, frame_body=None):
     for i in range(PREVIEW_STEPS):
         acc = verlet(pos, vel, acc, mass, movable, PREVIEW_DT)
         p = pos[-1].copy()
-        if (np.hypot(*(pos[:-1] - p).T) < radii).any():
+        if (np.hypot(*(pos[:-1] - p).T) < radii + test_radius).any():
             break                                   # would hit something
         if k is not None:
             p -= pos[k] - frame0
@@ -300,11 +364,11 @@ def draw_arrow(surface, start, end, color):
     pygame.draw.polygon(surface, color, [end, end + d.rotate(150), end + d.rotate(-150)])
 
 
-def make_scene(sun_fixed=False):
-    """Sun plus a demo planet on an elliptical orbit."""
-    sun = Body((WIDTH / 2, HEIGHT / 2), mass=10_000, radius=30,
-               color=(255, 200, 60), fixed=sun_fixed)
-    r0 = 220
+def make_scene(sun_cfg, sun_fixed=False):
+    """A sun (mass, radius, color, kind) plus a demo planet on an ellipse."""
+    mass, radius, color, kind = sun_cfg
+    sun = Body((WIDTH / 2, HEIGHT / 2), mass, radius, color, fixed=sun_fixed, kind=kind)
+    r0 = max(220, radius * 4)
     v0 = 0.85 * circular_speed(sun.mass, r0)
     planet = Body((sun.pos.x + r0, sun.pos.y), mass=20, radius=8,
                   color=(90, 170, 255), vel=(0, -v0))
@@ -313,177 +377,326 @@ def make_scene(sun_fixed=False):
     return [sun, planet]
 
 
-def main():
-    pygame.init()
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("GravSim")
-    clock = pygame.time.Clock()
-    hud = ui.HUD(WIDTH, HEIGHT)
-    background = make_starfield()
+class App:
+    """Owns the simulation state, input handling and drawing."""
 
-    bodies = make_scene()
-    sun = bodies[0]             # the "main" body: camera target, HUD reference
-    sun.trail = deque(maxlen=SUN_TRAIL_LENGTH)
-    preset_idx = 2              # start on "Planet"
-    size_mult = mass_mult = 1.0
-    drag_start = None           # screen position of mouse-down while aiming
-    show_preview = True
-    show_trails = True
-    follow = True               # camera keeps the sun centered
-    mode = "merge"              # collision mode: "merge" or "bounce"
-    paused = False
-    accumulator = 0.0
-    sim_time = 0.0
-    cam = pygame.Vector2(0, 0)  # world position of the screen's top-left corner
+    def __init__(self):
+        pygame.init()
+        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        pygame.display.set_caption("GravSim")
+        self.clock = pygame.time.Clock()
+        self.hud = ui.HUD(WIDTH, HEIGHT)
+        self.background = make_starfield()
+        self.view = View()
 
-    def launch_velocity(mouse):
-        v = (pygame.Vector2(mouse) - drag_start) * LAUNCH_SCALE
-        return -v if SLINGSHOT else v
+        self.preset_idx = 2         # start on "Planet"
+        self.size_mult = self.mass_mult = 1.0
+        self.drag_start = None      # screen position of mouse-down while aiming
+        self.slider = None          # (name, track rect) while dragging a slider
+        self.show_preview = True
+        self.show_trails = True
+        self.follow = True          # camera keeps the sun centered
+        self.mode = "merge"         # collision mode: "merge" or "bounce"
+        self.paused = False
+        self.running = True
+        self.accumulator = 0.0
+        self.sim_time = 0.0
+        _name, *cfg = SUN_TYPES[DEFAULT_SUN]
+        self.reset(tuple(cfg), fixed=False)
 
-    def selected():
-        name, mass, radius, color = PRESETS[preset_idx]
-        r = max(2, round(radius * size_mult))
-        m = mass * size_mult ** 3 * mass_mult    # size keeps density; Shift changes it
+    # --- State helpers -----------------------------------------------------------
+    @property
+    def following(self):
+        return self.follow and self.sun in self.bodies
+
+    def set_sun(self, body):
+        """Make `body` the main body (camera target, sun panel, HUD reference)."""
+        self.sun = body
+        body.trail = deque(maxlen=SUN_TRAIL_LENGTH)
+
+    def reset(self, sun_cfg=None, fixed=None):
+        """Restart the scene, keeping the current sun settings by default."""
+        if sun_cfg is None:
+            sun_cfg = (self.sun.mass, self.sun.radius, self.sun.color, self.sun.kind)
+        if fixed is None:
+            fixed = self.sun.fixed
+        self.bodies = make_scene(sun_cfg, fixed)
+        self.set_sun(self.bodies[0])
+        self.view.center = pygame.Vector2(self.sun.pos)
+        self.sim_time = 0.0
+
+    def clear_trails(self):
+        for b in self.bodies:
+            b.trail.clear()
+
+    def select_preset(self, i):
+        self.preset_idx = i
+        self.size_mult = self.mass_mult = 1.0
+
+    def selected(self):
+        name, mass, radius, color = PRESETS[self.preset_idx]
+        r = max(2, round(radius * self.size_mult))
+        m = mass * self.size_mult ** 3 * self.mass_mult   # size keeps density; Shift changes it
         return name, m, r, color
 
-    running = True
-    while running:
-        frame_time = min(clock.tick(FPS) / 1000, MAX_FRAME_TIME)
-        mouse = pygame.Vector2(pygame.mouse.get_pos())
-        following = follow and sun in bodies
+    def launch_velocity(self, mouse):
+        """Drag vector -> velocity. Measured in world pixels, so a drag means
+        the same speed at every zoom level (the arrow = ~1 s of travel)."""
+        v = (pygame.Vector2(mouse) - self.drag_start) * (LAUNCH_SCALE / self.view.zoom)
+        return -v if SLINGSHOT else v
 
+    def zoom(self, factor, screen_pos=None):
+        # While following, the sun is locked to the center, so zoom about it.
+        self.view.zoom_by(factor, None if self.following else screen_pos)
+
+    # --- Sun controls --------------------------------------------------------------
+    def sun_type_index(self):
+        s = self.sun
+        for i, (_n, m, r, c, kind) in enumerate(SUN_TYPES):
+            if (abs(s.mass - m) < 0.5 and s.radius == r and s.kind == kind
+                    and (kind == "blackhole" or s.color == c)):
+                return i
+        return None
+
+    def apply_sun_type(self, i):
+        _name, m, r, c, kind = SUN_TYPES[i]
+        s = self.sun
+        s.mass, s.radius, s.color, s.kind = float(m), r, c, kind
+
+    def recenter(self):
+        """Shift the whole system so the sun sits at the view center, at rest.
+        This is only a change of reference frame - relative motion is kept."""
+        if self.sun not in self.bodies:
+            return
+        shift = self.view.center - self.sun.pos
+        v = pygame.Vector2(self.sun.vel)
+        for b in self.bodies:
+            b.pos += shift
+            if not b.fixed:
+                b.vel -= v
+        self.clear_trails()
+
+    def update_slider(self, pos):
+        name, track = self.slider
+        t = min(max((pos[0] - track.x) / track.width, 0.0), 1.0)
+        if name == "sun_mass":
+            lo, hi = SUN_MASS_RANGE
+            self.sun.mass = float(f"{lo * (hi / lo) ** t:.3g}")   # 3 significant figures
+        elif name == "sun_radius":
+            lo, hi = SUN_RADIUS_RANGE
+            self.sun.radius = round(lo + (hi - lo) * t)
+
+    # --- Input ---------------------------------------------------------------------
+    def handle_key(self, k):
+        if k == pygame.K_ESCAPE:
+            self.running = False
+        elif k == pygame.K_SPACE:
+            self.paused = not self.paused
+        elif k == pygame.K_h:
+            self.hud.show_help = not self.hud.show_help
+        elif k == pygame.K_s:
+            self.hud.sun_collapsed = not self.hud.sun_collapsed
+        elif k == pygame.K_t:
+            self.show_preview = not self.show_preview
+        elif k == pygame.K_l:
+            self.show_trails = not self.show_trails
+            self.clear_trails()
+        elif k == pygame.K_m:
+            self.mode = "bounce" if self.mode == "merge" else "merge"
+        elif k == pygame.K_v:
+            self.follow = not self.follow
+            self.clear_trails()                 # old trails were in the old frame
+        elif k == pygame.K_f:
+            if self.sun in self.bodies:
+                self.sun.fixed = not self.sun.fixed
+                self.sun.vel.update(0, 0)
+        elif k == pygame.K_c:
+            self.bodies = [b for b in self.bodies if b is self.sun]
+        elif k == pygame.K_r:
+            self.reset()
+        elif k in (pygame.K_EQUALS, pygame.K_PLUS, pygame.K_KP_PLUS):
+            self.zoom(ZOOM_STEP)
+        elif k in (pygame.K_MINUS, pygame.K_KP_MINUS):
+            self.zoom(1 / ZOOM_STEP)
+        elif k in (pygame.K_0, pygame.K_KP0):
+            self.view.zoom = 1.0
+        elif pygame.K_1 <= k < pygame.K_1 + len(PRESETS):
+            self.select_preset(k - pygame.K_1)
+
+    def handle_action(self, action, ref, pos):
+        """A click on a UI element (see ui.HUD.add)."""
+        kind, arg = action
+        if kind == "key":
+            self.handle_key(arg)
+        elif kind == "preset":
+            self.select_preset(arg)
+        elif kind == "sun_type":
+            self.apply_sun_type(arg)
+        elif kind == "sun_recenter":
+            self.recenter()
+        elif kind == "slider":
+            self.slider = (arg, ref)
+            self.update_slider(pos)
+
+    def throw(self, pos):
+        _, m, r, color = self.selected()
+        vel = self.launch_velocity(pos)
+        if self.following:                      # throw relative to the sun's motion
+            vel += self.sun.vel
+        self.bodies.append(Body(self.view.to_world(self.drag_start), m, r, color, vel=vel))
+        self.drag_start = None
+
+    def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                running = False
+                self.running = False
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    running = False
-                elif event.key == pygame.K_SPACE:
-                    paused = not paused
-                elif event.key == pygame.K_h:
-                    hud.show_help = not hud.show_help
-                elif event.key == pygame.K_t:
-                    show_preview = not show_preview
-                elif event.key == pygame.K_l:
-                    show_trails = not show_trails
-                    for b in bodies:
-                        b.trail.clear()
-                elif event.key == pygame.K_m:
-                    mode = "bounce" if mode == "merge" else "merge"
-                elif event.key == pygame.K_v:
-                    follow = not follow
-                    for b in bodies:              # old trails were in the old frame
-                        b.trail.clear()
-                elif event.key == pygame.K_f and sun in bodies:
-                    sun.fixed = not sun.fixed
-                    sun.vel.update(0, 0)
-                elif event.key == pygame.K_c:
-                    bodies = [b for b in bodies if b is sun]
-                elif event.key == pygame.K_r:
-                    bodies = make_scene(sun.fixed)
-                    sun = bodies[0]
-                    sun.trail = deque(maxlen=SUN_TRAIL_LENGTH)
-                    sim_time = 0.0
-                elif pygame.K_1 <= event.key < pygame.K_1 + len(PRESETS):
-                    preset_idx = event.key - pygame.K_1
-                    size_mult = mass_mult = 1.0
+                self.handle_key(event.key)
             elif event.type == pygame.MOUSEWHEEL:
-                f = SCROLL_STEP ** event.y
-                if pygame.key.get_mods() & pygame.KMOD_SHIFT:
-                    mass_mult = min(max(mass_mult * f, MASS_RANGE[0]), MASS_RANGE[1])
+                mods = pygame.key.get_mods()
+                if mods & pygame.KMOD_CTRL:
+                    self.zoom(ZOOM_STEP ** event.y, pygame.mouse.get_pos())
                 else:
-                    size_mult = min(max(size_mult * f, SIZE_RANGE[0]), SIZE_RANGE[1])
+                    f = SCROLL_STEP ** event.y
+                    if mods & pygame.KMOD_SHIFT:
+                        self.mass_mult = min(max(self.mass_mult * f, MASS_RANGE[0]), MASS_RANGE[1])
+                    else:
+                        self.size_mult = min(max(self.size_mult * f, SIZE_RANGE[0]), SIZE_RANGE[1])
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
-                    drag_start = pygame.Vector2(event.pos)
+                    hit = self.hud.hit(event.pos)
+                    if hit:
+                        self.handle_action(*hit, event.pos)
+                    elif not self.hud.blocked(event.pos):
+                        self.drag_start = pygame.Vector2(event.pos)
                 elif event.button == 3:
-                    drag_start = None
-            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1 and drag_start:
-                _, m, r, color = selected()
-                vel = launch_velocity(event.pos)
-                if following:                     # throw relative to the sun's motion
-                    vel += sun.vel
-                bodies.append(Body(drag_start + cam, m, r, color, vel=vel))
-                drag_start = None
+                    self.drag_start = None
+            elif event.type == pygame.MOUSEMOTION:
+                if self.slider:
+                    self.update_slider(event.pos)
+                elif event.buttons[1]:          # middle-drag pans the view
+                    if self.follow:
+                        self.follow = False
+                        self.clear_trails()
+                    self.view.center -= pygame.Vector2(event.rel) / self.view.zoom
+            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                if self.slider:
+                    self.slider = None
+                elif self.drag_start is not None:
+                    self.throw(event.pos)
 
-        # --- Physics ---
-        if not paused:
-            accumulator += frame_time
-            steps = int(accumulator / PHYSICS_DT)
-            accumulator -= steps * PHYSICS_DT
-            simulate(bodies, PHYSICS_DT, steps, mode)
-            sim_time += steps * PHYSICS_DT
+    # --- Simulation --------------------------------------------------------------------
+    def update(self, frame_time):
+        if not self.paused:
+            self.accumulator += frame_time
+            steps = int(self.accumulator / PHYSICS_DT)
+            self.accumulator -= steps * PHYSICS_DT
+            simulate(self.bodies, PHYSICS_DT, steps, self.mode)
+            self.sim_time += steps * PHYSICS_DT
 
-        if sun not in bodies and bodies:          # sun got swallowed or flung away
-            sun = max(bodies, key=lambda b: b.mass)
-            sun.trail = deque(maxlen=SUN_TRAIL_LENGTH)   # its old trail was sun-relative
-        following = follow and sun in bodies
-        if following:
-            cam = sun.pos - pygame.Vector2(WIDTH / 2, HEIGHT / 2)
-        view_center = cam + pygame.Vector2(WIDTH / 2, HEIGHT / 2)
-        bodies = [b for b in bodies
-                  if b.fixed or b is sun or b.pos.distance_to(view_center) < CULL_DISTANCE]
+        if self.sun not in self.bodies and self.bodies:   # sun swallowed or flung away
+            self.set_sun(max(self.bodies, key=lambda b: b.mass))
+        if self.following:
+            self.view.center = pygame.Vector2(self.sun.pos)
 
-        # --- Draw ---
-        screen.blit(background, (0, 0))
-        if show_trails:
-            for b in bodies:
-                if not paused:
-                    # When following, other bodies' trails are stored relative to
-                    # the sun (so orbits draw as clean loops), but the sun's own
-                    # trail stays in world coordinates: it shows the sun's path
-                    # through space, streaming out behind it on screen.
-                    b.trail.append((b.pos.x, b.pos.y) if not following or b is sun
-                                   else (b.pos.x - sun.pos.x, b.pos.y - sun.pos.y))
+        # Delete bodies far outside the view (farther when zoomed out)
+        cull = max(CULL_DISTANCE, 2 * math.hypot(WIDTH, HEIGHT) / self.view.zoom)
+        self.bodies = [b for b in self.bodies if b.fixed or b is self.sun
+                       or b.pos.distance_to(self.view.center) < cull]
+
+        if self.show_trails and not self.paused:
+            sun, following = self.sun, self.following
+            for b in self.bodies:
+                # While following, other trails are stored relative to the sun (so
+                # orbits draw as clean loops); the sun's own trail stays in world
+                # coordinates to show its path through space.
                 if following and b is not sun:
-                    b.draw_trail(screen, -sun.pos + cam)
+                    b.trail.append((b.pos.x - sun.pos.x, b.pos.y - sun.pos.y))
                 else:
-                    b.draw_trail(screen, cam)
-        for b in bodies:
-            b.draw(screen, cam)
+                    b.trail.append((b.pos.x, b.pos.y))
 
-        name, m, r, color = selected()
-        if drag_start is not None:
-            vel = launch_velocity(mouse)
-            start = drag_start + cam
+    # --- Drawing ---------------------------------------------------------------------
+    def draw(self):
+        screen, view, sun, hud = self.screen, self.view, self.sun, self.hud
+        mouse = pygame.Vector2(pygame.mouse.get_pos())
+        following = self.following
+
+        screen.blit(self.background, (0, 0))
+        if self.show_trails:
+            for b in self.bodies:
+                rel = following and b is not sun
+                b.draw_trail(screen, view, (sun.pos.x, sun.pos.y) if rel else (0.0, 0.0))
+        for b in self.bodies:
+            b.draw(screen, view)
+
+        name, m, r, color = self.selected()
+        aim = None
+        if self.drag_start is not None:
+            vel = self.launch_velocity(mouse)
+            start = view.to_world(self.drag_start)
             v_circ = orbit = None
-            if sun in bodies:
+            if sun in self.bodies:
                 v_circ = circular_speed(sun.mass, start.distance_to(sun.pos))
                 rel_vel = vel if following else vel - sun.vel
                 orbit = orbit_info(start - sun.pos, rel_vel, sun.mass, sun.radius + r)
             status_color = hud.orbit_status(orbit)[1]
-            if show_preview:
+            if self.show_preview:
                 dot = [int(c * 0.6) for c in status_color]
                 v0 = vel + sun.vel if following else vel
-                for p in predict_path(bodies, tuple(start), tuple(v0),
-                                      sun if following else None):
-                    pygame.draw.circle(screen, dot, (round(p[0] - cam.x), round(p[1] - cam.y)), 1)
-            Body(start, m, r, color).draw(screen, cam)
-            draw_arrow(screen, drag_start, drag_start + vel / LAUNCH_SCALE, status_color)
+                for p in predict_path(self.bodies, tuple(start), tuple(v0),
+                                      sun if following else None, r):
+                    q = view.to_screen((p[0], p[1]))
+                    pygame.draw.circle(screen, dot, (round(q.x), round(q.y)), 1)
+            Body(start, m, r, color).draw(screen, view)
+            draw_arrow(screen, self.drag_start,
+                       self.drag_start + vel * (view.zoom / LAUNCH_SCALE), status_color)
             aim = (mouse, vel.length(), v_circ, orbit)
-        else:
-            aim = None
-            pygame.draw.circle(screen, color, mouse, r, 1)
+        elif not hud.blocked(mouse):
+            pygame.draw.circle(screen, color, mouse, max(1, round(r * view.zoom)), 1)
 
         # --- UI ---
+        hud.begin(mouse, self.slider[0] if self.slider else None)
         toggles = [
-            ("M", "Collisions", mode.upper(), True),
-            ("L", "Trails", "ON" if show_trails else "OFF", show_trails),
-            ("T", "Aim preview", "ON" if show_preview else "OFF", show_preview),
-            ("V", "Camera", "FOLLOW SUN" if following else "FIXED", following),
-            ("F", "Sun", "PINNED" if sun.fixed else "FREE", True),
+            ("M", "Collisions", self.mode.upper(), True, ("key", pygame.K_m)),
+            ("L", "Trails", "ON" if self.show_trails else "OFF", self.show_trails,
+             ("key", pygame.K_l)),
+            ("T", "Aim preview", "ON" if self.show_preview else "OFF", self.show_preview,
+             ("key", pygame.K_t)),
+            ("V", "Camera", "FOLLOW SUN" if following else "FIXED", following,
+             ("key", pygame.K_v)),
+            ("0", "Zoom", f"{view.zoom:.2f}x", abs(view.zoom - 1) > 1e-6, ("key", pygame.K_0)),
         ]
-        hud.draw_status(screen, clock.get_fps(), len(bodies), sim_time, toggles)
+        status = hud.draw_status(screen, self.clock.get_fps(), len(self.bodies),
+                                 self.sim_time, toggles)
+        ti = self.sun_type_index()
+        (mlo, mhi), (rlo, rhi) = SUN_MASS_RANGE, SUN_RADIUS_RANGE
+        hud.draw_sun_panel(
+            screen, status.bottom + 10, SUN_TYPES, ti,
+            SUN_TYPES[ti][0] if ti is not None else "Custom",
+            sun.mass, sun.radius,
+            math.log(max(sun.mass, 1) / mlo) / math.log(mhi / mlo),
+            (sun.radius - rlo) / (rhi - rlo),
+            sun.fixed, sun.accent)
         hud.draw_controls(screen)
-        hud.draw_toolbar(screen, PRESETS, preset_idx, r, m, size_mult, mass_mult,
-                         SIZE_RANGE, MASS_RANGE)
-        if paused:
+        hud.draw_toolbar(screen, PRESETS, self.preset_idx, r, m, self.size_mult,
+                         self.mass_mult, SIZE_RANGE, MASS_RANGE)
+        if self.paused:
             hud.draw_paused(screen)
         if aim:                                   # on top of everything else
             hud.draw_aim(screen, *aim)
         pygame.display.flip()
 
-    pygame.quit()
+    def run(self):
+        while self.running:
+            frame_time = min(self.clock.tick(FPS) / 1000, MAX_FRAME_TIME)
+            self.handle_events()
+            self.update(frame_time)
+            self.draw()
+        pygame.quit()
+
+
+def main():
+    App().run()
 
 
 if __name__ == "__main__":
