@@ -8,6 +8,7 @@ import pygame
 import ui
 from body import Body, View
 from config import *
+from craft import make_craft, steer
 from effects import Flashes, Starfield
 from field import FieldOverlay
 from history import History
@@ -18,6 +19,10 @@ from render import draw_arrow, draw_points
 from sound import Sound
 from scenes import (QUICKSAVE, SCENARIOS, ask_path, lagrange_points, load_file,
                     place_in_orbit, ring_around, save_file, to_dict)
+
+
+ARROW_KEYS = {pygame.K_UP: "up", pygame.K_DOWN: "down",
+              pygame.K_LEFT: "left", pygame.K_RIGHT: "right"}
 
 
 class App:
@@ -54,6 +59,8 @@ class App:
         self.toast = None           # (text, expiry in ms)
         self.n_particles = 0
         self.events = []            # collisions this frame: (kind, pos, strength)
+        self.keys_held = set()      # arrow keys held (manual spacecraft piloting)
+        self.pick = None            # (craft, mode) while waiting for a target click
         self.history = History()    # rewind buffer
         self.rewinding = False      # Z held
         self.orbit_tool = False     # O: a click places a body on a circular orbit
@@ -103,7 +110,8 @@ class App:
         lg = sc.get("lagrange")
         self.lagrange = (bodies[lg[0]], bodies[lg[1]]) if lg else None
         self.show_lagrange = self.lagrange is not None
-        self.mode = sc["mode"]
+        if sc.get("mode"):
+            self.mode = sc["mode"]
         self.sim_time = sc.get("sim_time", 0.0)
         self.accumulator = 0.0
         self.history.clear(self.sim_time)
@@ -202,6 +210,8 @@ class App:
         """Fix up references after bodies merged, were culled or deleted."""
         if self.selection not in self.bodies:
             self.selection = None
+        if self.pick and self.pick[0] not in self.bodies:
+            self.pick = None
         if self.lagrange and any(b not in self.bodies for b in self.lagrange):
             self.lagrange, self.show_lagrange = None, False
         if self.sun not in self.bodies and self.bodies:   # sun swallowed or flung away
@@ -287,7 +297,55 @@ class App:
             "mass": sel.mass, "primary": primary.name if primary else None,
             "speed": speed, "dist": dist, "el": el,
             "following": self.following and self.target is sel,
+            "craft": None if sel.pilot is None else {
+                "mode": sel.pilot.mode, "status": sel.pilot.status, "dv": sel.pilot.dv,
+                "picking": self.pick[1] if self.pick and self.pick[0] is sel else None},
         }
+
+    # --- Spacecraft --------------------------------------------------------------------
+    def set_pilot_mode(self, mode):
+        craft = self.selection
+        if craft is None or craft.pilot is None:
+            return
+        self.pick = None
+        if mode in ("transfer", "follow"):
+            self.pick = (craft, mode)
+            craft.pilot.status = ("Click the body to transfer to" if mode == "transfer"
+                                  else "Click the body to rendezvous with")
+            self.notify(craft.pilot.status + " (click empty space to cancel)")
+        elif mode == "hold":
+            hold = self.hold_target(craft)
+            if hold is None:
+                self.notify("Nothing to hold on to here")
+                return
+            craft.pilot.set_mode("hold", hold=hold)
+        else:
+            craft.pilot.set_mode(mode)
+
+    def hold_target(self, craft):
+        """Hold the nearest shown Lagrange point if we're close to one,
+        otherwise hold a circular orbit at the current distance."""
+        if self.show_lagrange and self.lagrange:
+            label, point = min(lagrange_points(*self.lagrange).items(),
+                               key=lambda kv: kv[1].distance_to(craft.pos))
+            if point.distance_to(craft.pos) < 100:
+                return ("L", *self.lagrange, label)
+        primary = dominant_body(craft, self.bodies)
+        if primary is None:
+            return None
+        return ("orbit", primary, craft.pos.distance_to(primary.pos))
+
+    def pick_target(self, pos):
+        """Second click of Transfer/Follow: choose the target body."""
+        craft, mode = self.pick
+        self.pick = None
+        hit = self.body_at(pos)
+        if hit is None or hit is craft:
+            craft.pilot.status = "Autopilot " + craft.pilot.mode
+            self.notify("Target selection cancelled")
+            return
+        craft.pilot.set_mode(mode, target=hit)
+        self.notify(f"{craft.name}: {'transfer to' if mode == 'transfer' else 'rendezvous with'} {hit.name}")
 
     # --- Sun controls --------------------------------------------------------------
     def sun_type_index(self):
@@ -344,6 +402,11 @@ class App:
                 self.load_scene_file(QUICKSAVE)
             else:
                 self.notify("No quicksave yet (F5 to make one)")
+        elif k in ARROW_KEYS:
+            self.keys_held.add(ARROW_KEYS[k])
+        elif k == pygame.K_ESCAPE and self.pick:
+            self.pick[0].pilot.status = "Autopilot " + self.pick[0].pilot.mode
+            self.pick = None
         elif k == pygame.K_ESCAPE:
             if self.hud.scenes_open:
                 self.hud.scenes_open = False
@@ -451,6 +514,8 @@ class App:
                 self.remove_body(self.selection)
         elif kind == "sel_mass":
             self.scale_selection_mass(arg)
+        elif kind == "pilot":
+            self.set_pilot_mode(arg)
         elif kind == "sel_ring":
             self.add_ring()
         elif kind == "rewind":
@@ -467,8 +532,11 @@ class App:
         vel = self.launch_velocity(pos)
         if self.following:                      # throw relative to the target's motion
             vel += self.target.vel
-        self.bodies.append(Body(self.view.to_world(self.drag_start), m, r, color,
-                                vel=vel, name=name))
+        body = Body(self.view.to_world(self.drag_start), m, r, color, vel=vel, name=name)
+        self.bodies.append(body)
+        if name == "Spacecraft":
+            make_craft(body)
+            self.selection = body               # open its autopilot straight away
         self.drag_start = None
 
     def release(self, pos):
@@ -477,6 +545,9 @@ class App:
         deselects); a real drag throws."""
         if pygame.Vector2(pos).distance_to(self.drag_start) < CLICK_SLOP:
             self.drag_start = None
+            if self.pick:
+                self.pick_target(pos)
+                return
             hit = self.body_at(pos)
             if hit is None and self.orbit_tool:
                 self.place_orbiting(pos)
@@ -496,6 +567,9 @@ class App:
             self.notify("Too close - that would be inside it")
         else:
             self.bodies.append(body)
+            if name == "Spacecraft":
+                make_craft(body)
+                self.selection = body
 
     def add_ring(self):
         center = self.selection or (self.target if self.following else self.sun)
@@ -552,6 +626,8 @@ class App:
                 self.handle_key(event.key)
             elif event.type == pygame.KEYUP and event.key == pygame.K_z:
                 self.rewinding = False
+            elif event.type == pygame.KEYUP and event.key in ARROW_KEYS:
+                self.keys_held.discard(ARROW_KEYS[event.key])
             elif event.type == pygame.MOUSEWHEEL:
                 mods = pygame.key.get_mods()
                 if mods & pygame.KMOD_CTRL:
@@ -604,6 +680,10 @@ class App:
             if steps > MAX_STEPS_PER_FRAME:     # can't keep up: slow down, don't freeze
                 steps, self.accumulator = MAX_STEPS_PER_FRAME, 0.0
             self.events = []
+            for b in self.bodies:               # spacecraft engines for this frame
+                if b.pilot is not None:
+                    keys = self.keys_held if b is self.selection else set()
+                    steer(b, self.bodies, steps * PHYSICS_DT, frame_time, keys)
             simulate(self.bodies, PHYSICS_DT, steps, self.mode, self.events)
             if self.mode == "shatter":
                 self.tidal_check()
@@ -757,7 +837,7 @@ class App:
              ("key", pygame.K_t)),
             ("V", "Camera", cam, following, ("key", pygame.K_v)),
             ("0", "Zoom", f"{view.zoom:.2f}x", abs(view.zoom - 1) > 1e-6, ("key", pygame.K_0)),
-            ("< >", "Speed", f"{self.speed:g}x", self.speed != 1, ("speed", None)),
+            (", .", "Speed", f"{self.speed:g}x", self.speed != 1, ("speed", None)),
             ("K", "Lagrange pts", "ON" if self.show_lagrange else "OFF", self.show_lagrange,
              ("key", pygame.K_k)),
             ("O", "Orbit tool", "ON" if self.orbit_tool else "OFF", self.orbit_tool,

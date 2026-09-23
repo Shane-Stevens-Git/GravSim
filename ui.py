@@ -131,12 +131,12 @@ class HUD:
         pygame.draw.circle(surface, color, knob, 8 if hot else 7, 2)
         self.add(hit, ("slider", name), track)
 
-    def button(self, surface, rect, label, action, key=None, on=False):
+    def button(self, surface, rect, label, action, key=None, on=False, small=False):
         rect = pygame.Rect(rect)
         hov = self.hovered(rect)
-        pygame.draw.rect(surface, HOVER_BG if hov else (22, 28, 48), rect, border_radius=6)
+        pygame.draw.rect(surface, HOVER_BG if hov or on else (22, 28, 48), rect, border_radius=6)
         pygame.draw.rect(surface, ACCENT if on else KEY_BORDER, rect, 1, border_radius=6)
-        img = self.f_label.render(label, True, TEXT)
+        img = (self.f_small if small else self.f_label).render(label, True, ACCENT if on else TEXT)
         if key:
             kw = max(20, self.f_small.size(key)[0] + 10)     # keycap width
             x = rect.centerx - (kw + 6 + img.get_width()) // 2
@@ -243,8 +243,9 @@ class HUD:
     CONTROLS = [
         ("Drag", "Throw a body"),
         ("RMB", "Cancel throw"),
-        ("1-5 / click", "Choose body type"),
+        ("1-6 / click", "Choose body type"),
         ("Click body", "Select / inspect it"),
+        ("Arrows", "Fly selected craft (Manual)"),
         ("Scroll", "Resize (keeps density)"),
         ("Shift+Scroll", "Change mass only"),
         ("Ctrl+Scroll", "Zoom (also + / -)"),
@@ -300,8 +301,9 @@ class HUD:
     def draw_inspector(self, surface, y, info):
         """Details for the selected body. info: name, color, accent, kind, mass,
         primary (name or None), speed, dist, el (orbital elements or None), following."""
-        w = 300
-        rect = self.panel(surface, (self.w - PAD - w, y, w, 268))
+        w = 320
+        craft = info.get("craft")
+        rect = self.panel(surface, (self.w - PAD - w, y, w, 268 + (112 if craft else 0)))
         x, ty = rect.x + 14, rect.y + 12
 
         self.star_icon(surface, (x + 6, ty + 9), 6, info["color"], info["kind"])
@@ -358,7 +360,42 @@ class HUD:
         self.button(surface, (x + bw + 8, ty, bw, 28), "Ring", ("sel_ring", None), key="B")
         self.button(surface, (x + 2 * (bw + 8), ty, bw, 28), "Delete", ("sel_delete", None),
                     key="Del")
+        if craft:
+            self.draw_autopilot(surface, x, ty + 40, w - 28, craft)
         return rect
+
+    def draw_autopilot(self, surface, x, y, width, craft):
+        """Spacecraft section: mode buttons, delta-v used, status line."""
+        pygame.draw.line(surface, PANEL_BORDER, (x - 4, y - 6), (x + width + 4, y - 6))
+        self.text(surface, self.f_small, "AUTOPILOT", DIM, (x, y))
+        self.text(surface, self.f_small, f"dv used  {craft['dv']:,.0f} px/s", DIM,
+                  (x + width, y), "topright")
+        y += 18
+        labels = [("off", "Off"), ("hold", "Hold"), ("transfer", "Transfer"),
+                  ("follow", "Follow"), ("manual", "Manual")]
+        bw = (width - 4 * 5) // 5
+        for i, (mode, label) in enumerate(labels):
+            self.button(surface, (x + i * (bw + 5), y, bw, 26), label, ("pilot", mode),
+                        on=craft["mode"] == mode or craft.get("picking") == mode, small=True)
+        y += 34
+        color = WARN if craft.get("picking") else TEXT
+        for line in self._wrap(craft["status"], self.f_label, width)[:2]:
+            self.text(surface, self.f_label, line, color, (x, y))
+            y += 18
+
+    @staticmethod
+    def _wrap(text, font, width):
+        words, lines, cur = text.split(), [], ""
+        for w in words:
+            test = f"{cur} {w}".strip()
+            if font.size(test)[0] <= width or not cur:
+                cur = test
+            else:
+                lines.append(cur)
+                cur = w
+        if cur:
+            lines.append(cur)
+        return lines
 
     # --- Scenes menu (modal) -------------------------------------------------------------
     def draw_scenes(self, surface, scenarios, current_idx):
@@ -428,7 +465,12 @@ class HUD:
                               border=color if sel else (KEY_BORDER if hov else PANEL_BORDER),
                               width=2 if sel else 1)
             self.keycap(surface, str(i + 1), (rect.x + 6, rect.y + 6))
-            pygame.draw.circle(surface, color, (rect.centerx, rect.y + 34), min(r, 16))
+            if name == "Spacecraft":                     # arrowhead icon
+                cx, cy = rect.centerx, rect.y + 34
+                pygame.draw.polygon(surface, color, [(cx + 11, cy), (cx - 8, cy - 8),
+                                                     (cx - 4, cy), (cx - 8, cy + 8)])
+            else:
+                pygame.draw.circle(surface, color, (rect.centerx, rect.y + 34), min(r, 16))
             self.text(surface, self.f_label, name, TEXT if (sel or hov) else DIM,
                       (rect.centerx, rect.bottom - 8), "midbottom")
             self.add(rect, ("preset", i))

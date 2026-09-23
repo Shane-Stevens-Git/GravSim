@@ -38,13 +38,14 @@ PARTICLE_TRAIL_LENGTH = 45  # belts can have hundreds of particles: keep their t
 SUN_TRAIL_LENGTH = 900      # the sun moves slowly, so it keeps a longer trail (15 s)
 TRAIL_BANDS = 8             # fade is drawn in this many brightness bands
 
-# Body presets, selected with number keys 1-5: (name, mass, radius, color)
+# Body presets, selected with number keys 1-6: (name, mass, radius, color)
 PRESETS = [
     ("Asteroid",   1,     3, (160, 160, 160)),
     ("Moon",       5,     5, (210, 210, 220)),
     ("Planet",     20,    8, (90, 170, 255)),
     ("Gas giant",  200,  14, (230, 170, 100)),
     ("Red dwarf",  2000, 20, (255, 110, 70)),
+    ("Spacecraft", 0.001, 4, (225, 232, 255)),   # has an engine + autopilot (craft.py)
 ]
 
 
@@ -96,3 +97,14 @@ GLOW_STAR_EXTENT = 5.0      # bloom radius as a multiple of body radius
 GLOW_BODY_EXTENT = 3.0
 SOUND_ON = True             # X toggles
 SOUND_VOLUME = 0.6
+
+# --- Spacecraft (preset 6) -------------------------------------------------------------
+MANUAL_THRUST = 100.0       # px/s^2 with Up held
+MANUAL_TURN_RATE = 220.0    # deg/s with Left/Right held
+HOLD_KP, HOLD_KD = 6.0, 5.0     # station-keeping controller gains
+HOLD_MAX_THRUST = 400.0
+ORBIT_KR, ORBIT_KD = 0.8, 3.0   # orbit-hold: radial correction, velocity gain
+FOLLOW_KP, FOLLOW_KD = 0.8, 3.0
+FOLLOW_MAX_SPEED = 160.0    # px/s closing speed while chasing a target
+FOLLOW_MAX_THRUST = 150.0
+TRANSFER_MAX_THRUST = 300.0

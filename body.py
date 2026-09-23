@@ -37,6 +37,7 @@ class Body:
 
     def __init__(self, pos, mass, radius, color, vel=(0, 0), fixed=False, kind="body",
                  name="Body", particle=False, soft=SOFTENING, absorbs=True):
+        """kind: "body", "star", "blackhole" or "craft" (spacecraft)."""
         self.pos = pygame.Vector2(pos)
         self.vel = pygame.Vector2(vel)
         self.mass = float(mass)
@@ -54,6 +55,9 @@ class Body:
         # False: test particles pass through instead of being absorbed (galaxy
         # cores - real stars almost never hit the central black hole).
         self.absorbs = absorbs
+        self.thrust = pygame.Vector2()     # engine acceleration (spacecraft only)
+        self.heading = -90.0               # degrees; where a craft's nose points
+        self.pilot = None                  # craft.Autopilot for spacecraft
         self.trail = deque(maxlen=PARTICLE_TRAIL_LENGTH if particle else TRAIL_LENGTH)
 
     @property
@@ -92,12 +96,39 @@ class Body:
             glow = self.glow_surface(r, self.accent, self.kind in ("star", "blackhole"))
             half = glow.get_width() // 2
             surface.blit(glow, (cx - half, cy - half), special_flags=pygame.BLEND_RGB_ADD)
+        if self.kind == "craft":
+            self.draw_craft(surface, cx, cy, view)
+            return
         if self.kind == "blackhole":
             pygame.draw.circle(surface, BLACK_HOLE_RING, (cx, cy),
                                r + max(2, r // 4), max(1, r // 6))
             pygame.draw.circle(surface, (0, 0, 0), (cx, cy), r)
         else:
             pygame.draw.circle(surface, self.color, (cx, cy), r)
+
+    def draw_craft(self, surface, cx, cy, view):
+        """A little arrowhead pointing along `heading`, with an engine flame
+        whose length shows how hard it's thrusting."""
+        size = max(8, self.radius * view.zoom * 2.2)
+        fwd = pygame.Vector2(1, 0).rotate(self.heading)
+        side = fwd.rotate(90)
+        c = pygame.Vector2(cx, cy)
+        a = self.thrust.length()
+        if a > 0.3:
+            flame_len = size * (0.6 + min(a / 60, 2.2))
+            tail = c - fwd * size * 0.6
+            flicker = 1 + 0.15 * ((pygame.time.get_ticks() // 40) % 3 - 1)
+            tip = tail - fwd * flame_len * flicker
+            pygame.draw.polygon(surface, (255, 150, 60),
+                                [tail + side * size * 0.35, tip, tail - side * size * 0.35])
+            pygame.draw.polygon(surface, (255, 235, 170),
+                                [tail + side * size * 0.18, tail - fwd * flame_len * 0.55,
+                                 tail - side * size * 0.18])
+        nose = c + fwd * size
+        pts = [nose, c - fwd * size * 0.7 + side * size * 0.7, c - fwd * size * 0.35,
+               c - fwd * size * 0.7 - side * size * 0.7]
+        pygame.draw.polygon(surface, self.color, pts)
+        pygame.draw.polygon(surface, (40, 50, 80), pts, 1)
 
     def draw_trail(self, surface, view, offset=(0.0, 0.0)):
         """Fading line through recent positions (oldest = dimmest).

@@ -16,11 +16,12 @@ python main.py
 
 | Input | Action |
 |---|---|
-| **1-5** or click a card | Body type: Asteroid, Moon, Planet, Gas giant, Red dwarf |
+| **1-6** or click a card | Body type: Asteroid, Moon, Planet, Gas giant, Red dwarf, Spacecraft |
 | **Scroll** | Size of next body (mass scales with it, same density) |
 | **Shift + scroll** | Mass of next body only (denser / lighter) |
 | **Left-drag, release** | Throw: press where it starts, drag the way it should go |
 | **Right-click** | Cancel a throw |
+| **Arrow keys** | Fly the selected spacecraft in Manual mode (Up thrust, Down brake, Left/Right turn) |
 | **Click a body** | Select it: inspector shows its orbit (period, eccentricity, peri/apoapsis) and draws the predicted ellipse |
 | **G** | Camera follows the selected body (again: back to the sun) |
 | **[ / ]**, **Del** | Lower / raise the selected body's mass (x1.5), delete it |
@@ -64,8 +65,9 @@ python main.py
 | Binary star | A planet on a stable orbit around *both* stars. |
 | Figure-eight | Three equal stars sharing one figure-8 path. Marginally stable - it eventually breaks up. |
 | Asteroid belt | 300 test-particle asteroids; the giant's 2:1 resonance stirs up the middle of the belt (try 8x). |
-| Lagrange points | Asteroids at L1-L5. L4/L5 (green) hold them in tadpole loops; L1-L3 (amber) let them drift. Follow the giant (click it, G) to see the tadpoles. |
+| Lagrange points | Asteroids at L1-L5. L4/L5 (green) hold them in tadpole loops; L1-L3 (amber) are unstable, so those drift off - while a **probe** beside the L1 asteroid holds L1 with small thruster burns (station-keeping). |
 | Galaxy collision | 2,300 stars in two disk galaxies on a close, bound fly-by: tidal tails, bridges, stolen stars; the cores come back and merge. Try 4x. |
+| Shatter demo | Switches to SHATTER mode: a head-on planet/giant smash at ~2 s, a planet shredded by the sun's tides at ~3 s, and the smash remnant falling sunward to be shredded too. |
 
 **Test particles:** belt asteroids, Lagrange asteroids and galaxy stars feel
 gravity but exert none and never collide with each other (like real
@@ -76,6 +78,23 @@ skip trails. Galaxy cores are softened (their mass is spread out) and let
 stars pass through instead of swallowing them.
 
 R restarts the current scene (or reloads the last scene file).
+
+### Spacecraft (6)
+
+Throw one like any body; it's selected automatically and the inspector gets
+an **Autopilot** row. Fuel is unlimited, but the delta-v spent is shown.
+
+- **Hold** - station-keeping. Near a shown Lagrange point (K) it holds that
+  point; otherwise it holds a circular orbit at its current distance.
+- **Transfer** - click a planet: waits for the launch window, does a
+  Hohmann transfer burn, coasts, then rendezvous.
+- **Follow** - click a body: rendezvous and keep station beside it, or enter
+  orbit around it if it's massive enough to hold one.
+- **Manual** - fly it with the arrow keys.
+- **Off** - engine off, just coasting.
+
+Spacecraft fly through dust and debris (test particles) but crash into
+planets and stars.
 
 ### Sun panel
 

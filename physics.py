@@ -43,10 +43,14 @@ def pack(bodies):
     return pos, vel, mass, movable
 
 
-def verlet(pos, vel, acc, mass, movable, dt, sources=None, soft2=None):
-    """One velocity-Verlet step, in place. Returns the new accelerations."""
+def verlet(pos, vel, acc, mass, movable, dt, sources=None, soft2=None, thrust=None):
+    """One velocity-Verlet step, in place. Returns the new accelerations.
+    `thrust` is an optional (n, 2) array of extra accelerations (spacecraft
+    engines), held constant over the step."""
     pos += movable * (vel * dt + 0.5 * acc * dt * dt)
     new_acc = accelerations(pos, mass, sources, soft2)
+    if thrust is not None:
+        new_acc += thrust
     vel += movable * (0.5 * (acc + new_acc) * dt)
     return new_acc
 
@@ -137,10 +141,15 @@ def simulate(bodies, dt, steps, mode, events=None):
         sources = np.nonzero(~particle)[0] if particle.any() else None
         soft2 = np.array([b.soft ** 2 for b in bodies], dtype=float)
         absorbs = np.array([b.absorbs for b in bodies], dtype=bool)
+        thrust = None
+        if any(b.thrust.x or b.thrust.y for b in bodies):
+            thrust = np.array([(b.thrust.x, b.thrust.y) for b in bodies], dtype=float)
         acc = accelerations(pos, mass, sources, soft2)
+        if thrust is not None:
+            acc += thrust
         pairs = []
         while done < steps and not pairs:
-            acc = verlet(pos, vel, acc, mass, movable, dt, sources, soft2)
+            acc = verlet(pos, vel, acc, mass, movable, dt, sources, soft2, thrust)
             done += 1
             pairs = find_collisions(pos, vel, radii, mode, sources, particle, absorbs)
         for b, p, v in zip(bodies, pos, vel):
@@ -426,3 +435,67 @@ def tidal_disrupt(body, rng=random):
         pieces.append(Body(body.pos + offset, body.mass / n, rng.choice((1, 1, 2)),
                            body.color, vel=body.vel + jitter, name="Debris", particle=True))
     return pieces
+
+
+# --- Lagrange points --------------------------------------------------------------
+def _collinear_root(f, lo, hi, iters=80):
+    """Bisection: f(lo) and f(hi) have opposite signs."""
+    flo = f(lo)
+    for _ in range(iters):
+        mid = (lo + hi) / 2
+        fm = f(mid)
+        if (fm < 0) == (flo < 0):
+            lo, flo = mid, fm
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
+def lagrange_points(primary, secondary):
+    """World positions of L1-L5 for a primary/secondary pair right now.
+
+    Solved in the co-rotating frame (units: separation = 1, G(M+m) = 1),
+    where the collinear points satisfy
+        x - (1-mu)(x+mu)/|x+mu|^3 - mu(x-1+mu)/|x-1+mu|^3 = 0.
+    L4/L5 form equilateral triangles with the pair; L4 leads the secondary.
+    """
+    M, m = primary.mass, secondary.mass
+    mu = m / (M + m)
+    sep_vec = secondary.pos - primary.pos
+    R = sep_vec.length()
+    if R < 1e-6:
+        return {}
+    u = sep_vec / R
+    bary = (primary.pos * M + secondary.pos * m) / (M + m)
+
+    def f(x):
+        a, b = x + mu, x - 1 + mu
+        return x - (1 - mu) * a / abs(a) ** 3 - mu * b / abs(b) ** 3
+
+    eps = 1e-6
+    x1 = _collinear_root(f, -mu + eps, 1 - mu - eps)
+    x2 = _collinear_root(f, 1 - mu + eps, 2.0)
+    x3 = _collinear_root(f, -2.0, -mu - eps)
+
+    rel_v = secondary.vel - primary.vel
+    h = sep_vec.x * rel_v.y - sep_vec.y * rel_v.x    # orbit direction
+    lead = 60 if h >= 0 else -60
+    return {
+        "L1": bary + u * (x1 * R),
+        "L2": bary + u * (x2 * R),
+        "L3": bary + u * (x3 * R),
+        "L4": primary.pos + u.rotate(lead) * R,
+        "L5": primary.pos + u.rotate(-lead) * R,
+    }
+
+
+def corotating_velocity(primary, secondary, pos):
+    """Velocity that keeps a point fixed in the pair's rotating frame."""
+    M, m = primary.mass, secondary.mass
+    bary = (primary.pos * M + secondary.pos * m) / (M + m)
+    bary_v = (primary.vel * M + secondary.vel * m) / (M + m)
+    sep = secondary.pos - primary.pos
+    rel_v = secondary.vel - primary.vel
+    omega = (sep.x * rel_v.y - sep.y * rel_v.x) / sep.length_squared()   # signed rad/s
+    d = pos - bary
+    return bary_v + pygame.Vector2(-d.y, d.x) * omega

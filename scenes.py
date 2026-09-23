@@ -6,7 +6,7 @@ A scene is a plain dict:
     target        index of the body the camera follows (None = fixed camera)
     center, zoom  camera (center used when the camera is fixed)
     lagrange      (primary index, secondary index) to mark L1-L5, or None
-    mode          collision mode, "merge" or "bounce"
+    mode          collision mode to switch to, or None to keep the current one
 """
 import json
 import math
@@ -16,8 +16,9 @@ import random
 import pygame
 
 from body import Body
+from craft import make_craft, pilot_from_dict, pilot_to_dict
 from config import *
-from physics import circular_speed
+from physics import circular_speed, corotating_velocity, lagrange_points  # noqa: F401 (re-exported)
 
 SAVE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saves")
 QUICKSAVE = os.path.join(SAVE_DIR, "quicksave.json")
@@ -27,7 +28,7 @@ YELLOW = (255, 200, 60)
 ROCK = (160, 160, 160)
 
 
-def scene(bodies, sun=0, target=0, center=None, zoom=1.0, lagrange=None, mode="merge"):
+def scene(bodies, sun=0, target=0, center=None, zoom=1.0, lagrange=None, mode=None):
     return {"bodies": bodies, "sun": sun, "target": target,
             "center": pygame.Vector2(center if center is not None else CENTER),
             "zoom": zoom, "lagrange": lagrange, "mode": mode}
@@ -146,6 +147,8 @@ def lagrange(sun_cfg, sun_fixed=False):
     there stay, and ones nudged a few degrees away trace 'tadpole' loops
     around them (easiest to see with the camera following the giant). L1, L2
     and L3 are balance points on a knife edge: those asteroids drift away.
+    A probe at L1 shows the fix real spacecraft use: small thruster burns
+    (station-keeping) keep it there while the L1 asteroid beside it drifts off.
     The sun must be free here - L-points are defined for two bodies orbiting
     their shared center of mass. Giant/sun mass ratio 1.5% is well inside
     the L4/L5 stability limit (3.85%).
@@ -161,6 +164,12 @@ def lagrange(sun_cfg, sun_fixed=False):
             bodies.append(Body(pos, 0.05, 2, (200, 220, 255) if stable else (255, 150, 150),
                                vel=corotating_velocity(sun, giant, pos),
                                name=f"{label} asteroid", particle=True))
+    points = lagrange_points(sun, giant)
+    probe = make_craft(Body(points["L1"] + pygame.Vector2(0, 0), 0.001, 4, (225, 232, 255),
+                            vel=corotating_velocity(sun, giant, points["L1"]),
+                            name="L1 probe"))
+    probe.pilot.set_mode("hold", hold=("L", sun, giant, "L1"))
+    bodies.append(probe)
     return scene(bodies, lagrange=(0, 1), zoom=1.0)
 
 
@@ -219,79 +228,41 @@ def galaxy_collision(sun_cfg=None, sun_fixed=False, seed=11):
     return scene(bodies, sun=0, target=None, zoom=0.5)
 
 
+def shatter_demo(sun_cfg, sun_fixed=False):
+    """Destruction on a timer (switches to SHATTER mode):
+    ~2 s  a planet and a gas giant on opposite (head-on) orbits collide at
+          ~3x their mutual escape speed and fragment;
+    ~3.5 s a second planet on a sun-grazing orbit dips inside the sun's
+          Roche limit and is torn into a debris stream.
+    Bonus: the head-on hit cancels most of the remnant's orbital speed, so it
+    falls sunward and gets shredded by tides too."""
+    sun = make_sun(sun_cfg, sun_fixed)
+    r = 200
+    planet = orbiting(sun, r, 0, 20, 8, (90, 170, 255), "Planet", screen_ccw=True)
+    giant = orbiting(sun, r, 180, 200, 14, (230, 170, 100), "Rogue giant", screen_ccw=False)
+    # Grazing orbit: apoapsis 320 px, periapsis 40 px (Roche limit ~57 px).
+    ra, rp = 320.0, 40.0
+    v_apo = math.sqrt(2 * G * sun.mass * rp / (ra * (ra + rp)))
+    # Starts at the top so its sun-grazing pass happens on the far side from
+    # where the smash wreckage falls.
+    comet = orbiting(sun, ra, 270, 20, 8, (140, 230, 200), "Doomed planet",
+                     speed_factor=v_apo / circular_speed(sun.mass + 20, ra), screen_ccw=True)
+    bodies = [sun, planet, giant, comet]
+    if not sun.fixed:
+        zero_momentum(bodies)
+    return scene(bodies, mode="shatter")
+
+
 SCENARIOS = [
     ("Sun & planet", "The default: one planet on an elliptical orbit.", sun_and_planet),
     ("Inner solar system", "Four planets, and a moon around Earth.", inner_solar_system),
     ("Binary star", "Two stars orbiting each other, a planet circling both.", binary_star),
     ("Figure-eight", "Three stars chasing each other along a figure-8.", figure_eight),
     ("Asteroid belt", "300 asteroids and a giant that stirs them up.", asteroid_belt),
-    ("Lagrange points", "Asteroids parked at L1-L5 of a sun-giant pair.", lagrange),
+    ("Lagrange points", "Asteroids at L1-L5, and a probe holding L1 with thrusters.", lagrange),
     ("Galaxy collision", "Two disk galaxies fly past and tear out tidal tails.", galaxy_collision),
+    ("Shatter demo", "A head-on smash, then tides shred what falls sunward.", shatter_demo),
 ]
-
-
-# --- Lagrange points --------------------------------------------------------------
-def _collinear_root(f, lo, hi, iters=80):
-    """Bisection: f(lo) and f(hi) have opposite signs."""
-    flo = f(lo)
-    for _ in range(iters):
-        mid = (lo + hi) / 2
-        fm = f(mid)
-        if (fm < 0) == (flo < 0):
-            lo, flo = mid, fm
-        else:
-            hi = mid
-    return (lo + hi) / 2
-
-
-def lagrange_points(primary, secondary):
-    """World positions of L1-L5 for a primary/secondary pair right now.
-
-    Solved in the co-rotating frame (units: separation = 1, G(M+m) = 1),
-    where the collinear points satisfy
-        x - (1-mu)(x+mu)/|x+mu|^3 - mu(x-1+mu)/|x-1+mu|^3 = 0.
-    L4/L5 form equilateral triangles with the pair; L4 leads the secondary.
-    """
-    M, m = primary.mass, secondary.mass
-    mu = m / (M + m)
-    sep_vec = secondary.pos - primary.pos
-    R = sep_vec.length()
-    if R < 1e-6:
-        return {}
-    u = sep_vec / R
-    bary = (primary.pos * M + secondary.pos * m) / (M + m)
-
-    def f(x):
-        a, b = x + mu, x - 1 + mu
-        return x - (1 - mu) * a / abs(a) ** 3 - mu * b / abs(b) ** 3
-
-    eps = 1e-6
-    x1 = _collinear_root(f, -mu + eps, 1 - mu - eps)
-    x2 = _collinear_root(f, 1 - mu + eps, 2.0)
-    x3 = _collinear_root(f, -2.0, -mu - eps)
-
-    rel_v = secondary.vel - primary.vel
-    h = sep_vec.x * rel_v.y - sep_vec.y * rel_v.x    # orbit direction
-    lead = 60 if h >= 0 else -60
-    return {
-        "L1": bary + u * (x1 * R),
-        "L2": bary + u * (x2 * R),
-        "L3": bary + u * (x3 * R),
-        "L4": primary.pos + u.rotate(lead) * R,
-        "L5": primary.pos + u.rotate(-lead) * R,
-    }
-
-
-def corotating_velocity(primary, secondary, pos):
-    """Velocity that keeps a point fixed in the pair's rotating frame."""
-    M, m = primary.mass, secondary.mass
-    bary = (primary.pos * M + secondary.pos * m) / (M + m)
-    bary_v = (primary.vel * M + secondary.vel * m) / (M + m)
-    sep = secondary.pos - primary.pos
-    rel_v = secondary.vel - primary.vel
-    omega = (sep.x * rel_v.y - sep.y * rel_v.x) / sep.length_squared()   # signed rad/s
-    d = pos - bary
-    return bary_v + pygame.Vector2(-d.y, d.x) * omega
 
 
 # --- Save / load ------------------------------------------------------------------
@@ -312,7 +283,8 @@ def to_dict(sc, extra=None):
             "name": b.name, "pos": [b.pos.x, b.pos.y], "vel": [b.vel.x, b.vel.y],
             "mass": b.mass, "radius": b.radius, "color": list(b.color),
             "fixed": b.fixed, "kind": b.kind, "particle": b.particle, "soft": b.soft,
-            "absorbs": b.absorbs,
+            "absorbs": b.absorbs, "heading": b.heading,
+            "pilot": pilot_to_dict(b.pilot, idx) if b.pilot else None,
         } for b in bodies],
     }
     data.update(extra or {})
@@ -322,11 +294,16 @@ def to_dict(sc, extra=None):
 def from_dict(data):
     if data.get("format") != "gravsim-scene":
         raise ValueError("not a GravSim scene file")
+    records = data["bodies"]
     bodies = [Body(d["pos"], d["mass"], d["radius"], d["color"], vel=d["vel"],
                    fixed=d.get("fixed", False), kind=d.get("kind", "body"),
                    name=d.get("name", "Body"), particle=d.get("particle", False),
                    soft=d.get("soft", SOFTENING), absorbs=d.get("absorbs", True))
-              for d in data["bodies"]]
+              for d in records]
+    for b, d in zip(bodies, records):         # spacecraft: restore autopilots
+        b.heading = d.get("heading", b.heading)
+        if d.get("pilot"):
+            b.pilot = pilot_from_dict(d["pilot"], bodies)
     sc = scene(bodies, sun=data.get("sun", 0) or 0, target=data.get("target"),
                center=data.get("center"), zoom=data.get("zoom", 1.0),
                lagrange=tuple(data["lagrange"]) if data.get("lagrange") else None,
