@@ -16,12 +16,12 @@ python main.py
 
 | Input | Action |
 |---|---|
-| **1-6** or click a card | Body type: Asteroid, Moon, Planet, Gas giant, Red dwarf, Spacecraft |
+| **1-7** or click a card | Body type: Asteroid, Moon, Planet, Gas giant, Red dwarf, Spacecraft, Comet |
 | **Scroll** | Size of next body (mass scales with it, same density) |
 | **Shift + scroll** | Mass of next body only (denser / lighter) |
 | **Left-drag, release** | Throw: press where it starts, drag the way it should go |
 | **Right-click** | Cancel a throw |
-| **Q** or the Select card | Select tool: clicks pick the nearest body (within ~30 px) and never create one; drag to pan. 1-6 switches back to throwing |
+| **Q** or the Select card | Select tool: clicks pick the nearest body (within ~30 px) and never create one; drag to pan. 1-7 switches back to throwing |
 | **Arrow keys** | Fly the selected spacecraft in Manual mode (Up thrust, Down brake, Left/Right turn) |
 | **Click a body** | Select it: inspector shows its orbit (period, eccentricity, peri/apoapsis) and draws the predicted ellipse |
 | **G** | Camera follows the selected body (again: back to the sun) |
@@ -31,7 +31,7 @@ python main.py
 | **Middle-drag** | Pan the view (switches the camera to fixed) |
 | **M / L / T / V** | Collision mode (merge / shatter / bounce), trails, aim preview, camera follow (or click the rows) |
 | **S** | Show / hide the sun panel |
-| **P** | Scenes menu (then 1-6 or click to load a preset) |
+| **P** | Scenes menu (then 1-9, 0 or click to load a preset) |
 | **O** | Orbit tool: a click places the next body on a circular orbit around whatever pulls hardest there (Shift+click: other direction) |
 | **B** | Add a ring of particles around the selected body (inside its Hill sphere) |
 | **W** | Gravity field overlay: potential wells as a heatmap with contour lines |
@@ -72,6 +72,7 @@ python main.py
 | Galaxy collision | 2,300 stars in two disk galaxies on a close, bound fly-by: tidal tails, bridges, stolen stars; the cores come back and merge. Try 4x. |
 | Shatter demo | Switches to SHATTER mode: a head-on planet/giant smash at ~2 s, a planet shredded by the sun's tides at ~3 s, and the smash remnant falling sunward to be shredded too. |
 | Space traffic | Six colored ships on endless tours of three planets: each orbits a planet for 8 s, then flies to the next on its route (rendezvous, enter orbit, repeat), steering around planets and the sun. Try 8x with trails on. |
+| Comets | Six comets on long, eccentric orbits. Their tails grow as they swing past the sun: a straight blue ion tail pointing directly away from the sun, and a curved dust tail that lags behind along the orbit. |
 
 **Test particles:** belt asteroids, Lagrange asteroids and galaxy stars feel
 gravity but exert none and never collide with each other (like real

@@ -251,7 +251,7 @@ class HUD:
         ("Bodies", [
             ("Drag", "Throw a body"),
             ("RMB", "Cancel a throw"),
-            ("1-6 / click", "Choose body type"),
+            ("1-7 / click", "Choose body type"),
             ("Scroll", "Resize (keeps density)"),
             ("Shift+Scroll", "Change mass only"),
             ("O", "Orbit tool (click = orbit)"),
@@ -469,7 +469,8 @@ class HUD:
         full = pygame.Rect(0, 0, self.w, self.h)
         self.panel(surface, full, bg=(0, 0, 0, 140), border=None, radius=0)
         self.add(full, ("key", pygame.K_p))
-        row_h, w = 54, 560
+        w = 560
+        row_h = max(44, min(54, (self.h - 40 - 118) // max(1, len(scenarios))))
         h = 58 + row_h * len(scenarios) + 60
         rect = self.panel(surface, ((self.w - w) // 2, (self.h - h) // 2, w, h), bg=(14, 18, 32, 250))
         self.add(rect, ("noop", None))                  # clicks inside don't close it
@@ -486,9 +487,11 @@ class HUD:
                 pygame.draw.rect(surface, HOVER_BG, row, border_radius=8)
             if cur:
                 pygame.draw.rect(surface, ACCENT, row, 1, border_radius=8)
-            self.keycap(surface, str(i + 1), (x, y + 15))
-            self.text(surface, self.f_title, name, TEXT, (x + 34, y + 6))
-            self.text(surface, self.f_label, desc, DIM, (x + 34, y + 26))
+            top = (row_h - 54) // 2
+            if i < 10:
+                self.keycap(surface, str((i + 1) % 10), (x, y + 15 + top))
+            self.text(surface, self.f_title, name, TEXT, (x + 34, y + 6 + top // 2))
+            self.text(surface, self.f_label, desc, DIM, (x + 34, y + 26 + top))
             if cur:
                 self.text(surface, self.f_small, "LOADED", ACCENT, (row.right - 12, y + 8), "topright")
             self.add(row, ("scene", i))
@@ -556,6 +559,11 @@ class HUD:
                 cx, cy = rect.centerx, rect.y + 34
                 pygame.draw.polygon(surface, color, [(cx + 11, cy), (cx - 8, cy - 8),
                                                      (cx - 4, cy), (cx - 8, cy + 8)])
+            elif name == "Comet":                        # head + swept tail icon
+                cx, cy = rect.centerx + 8, rect.y + 30
+                pygame.draw.polygon(surface, (90, 120, 160), [(cx, cy - 3), (cx - 26, cy + 10),
+                                                              (cx - 22, cy + 14), (cx, cy + 3)])
+                pygame.draw.circle(surface, color, (cx, cy), 5)
             else:
                 pygame.draw.circle(surface, color, (rect.centerx, rect.y + 34), min(r, 16))
             self.text(surface, self.f_label, name, TEXT if (sel or hov) else DIM,
@@ -568,7 +576,7 @@ class HUD:
         if select_on:
             self.text(surface, self.f_title, "Select tool", ACCENT, (ix, iy))
             self.text(surface, self.f_label, "Click near a body to select it", DIM, (ix, iy + 24))
-            self.text(surface, self.f_label, "Drag to pan  -  1-6 to throw again", DIM, (ix, iy + 44))
+            self.text(surface, self.f_label, "Drag to pan  -  1-7 to throw again", DIM, (ix, iy + 44))
             return
         name, _m, _r, color = presets[selected_idx]
         self.text(surface, self.f_title, name, color, (ix, iy))

@@ -285,6 +285,31 @@ def space_traffic(sun_cfg, sun_fixed=False, seed=5):
     return scene(bodies, zoom=0.65)
 
 
+def comets(sun_cfg, sun_fixed=False, seed=21):
+    """A sun, one planet and six comets on long elliptical orbits. Their
+    tails grow as they swing in close and always point away from the sun.
+    (In SHATTER mode, the closest sungrazers get torn apart by tides.)"""
+    rng = random.Random(seed)
+    sun = make_sun(sun_cfg, sun_fixed)
+    bodies = [sun, orbiting(sun, 230, 40, 20, 8, (90, 170, 255), "Planet", screen_ccw=True)]
+    palette = [(185, 225, 255), (200, 255, 230), (230, 210, 255), (255, 235, 200),
+               (190, 240, 255), (220, 255, 210)]
+    for k in range(6):
+        ra = rng.uniform(360, 520)                      # far point
+        rp = rng.uniform(60, 130)                       # close pass
+        mu = G * (sun.mass + 0.5)
+        v_apo = math.sqrt(2 * mu * rp / (ra * (ra + rp)))
+        body = orbiting(sun, ra, k * 60 + rng.uniform(-20, 20), 0.5, 3, palette[k], f"Comet {k + 1}",
+                        speed_factor=v_apo / circular_speed(sun.mass + 0.5, ra),
+                        screen_ccw=rng.random() < 0.7)
+        body.kind = "comet"
+        body.particle = True          # comets are too light to matter to each other
+        bodies.append(body)
+    if not sun.fixed:
+        zero_momentum(bodies)
+    return scene(bodies, zoom=0.7)
+
+
 SCENARIOS = [
     ("Sun & planet", "The default: one planet on an elliptical orbit.", sun_and_planet),
     ("Inner solar system", "Four planets, and a moon around Earth.", inner_solar_system),
@@ -295,6 +320,7 @@ SCENARIOS = [
     ("Galaxy collision", "Two disk galaxies fly past and tear out tidal tails.", galaxy_collision),
     ("Shatter demo", "A head-on smash, then tides shred what falls sunward.", shatter_demo),
     ("Space traffic", "Six ships touring three planets, orbiting each in turn.", space_traffic),
+    ("Comets", "Six comets on long orbits - tails grow near the sun.", comets),
 ]
 
 

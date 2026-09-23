@@ -79,3 +79,56 @@ class Flashes:
             pygame.draw.circle(glow, (*color, int(230 * fade)), (r + 1, r + 1), r, max(1, r // 6))
             surface.blit(glow, (p.x - r - 1, p.y - r - 1))
         self.items = alive
+
+
+class CometTails:
+    """Comet tails, drawn every frame from where the comet is right now:
+      * ion tail  - thin, blue-white, pointing straight away from the star
+                    (gas pushed by the solar wind);
+      * dust tail - wider, warmer, curving back along the comet's path
+                    (dust lags behind the comet's motion).
+    Both grow as the comet nears the star (sunlight ~ 1/r^2) and vanish far out."""
+
+    def __init__(self):
+        self.overlay = None
+
+    def draw(self, surface, view, comets, stars):
+        if not comets or not stars:
+            return
+        if self.overlay is None or self.overlay.get_size() != surface.get_size():
+            self.overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+        self.overlay.fill((0, 0, 0, 0))
+        for c in comets:
+            # the star lighting this comet most
+            star = max(stars, key=lambda s: s.mass / max((s.pos - c.pos).length_squared(), 1.0))
+            away = c.pos - star.pos
+            d = away.length()
+            if d < 1e-6:
+                continue
+            away /= d
+            strength = min(COMET_TAIL_MAX, (COMET_TAIL_DIST / d) ** 2)
+            length = COMET_TAIL_LEN * strength
+            if length < 4:
+                continue
+            rel_v = c.vel - star.vel
+            behind = -rel_v.normalize() if rel_v.length() > 1e-6 else away
+            dust_dir = (away * 0.55 + behind * 0.45)
+            dust_dir = dust_dir.normalize() if dust_dir.length() > 1e-6 else away
+            self._tail(c, away, away, length * 1.2, (150, 200, 255), 0.35, view)
+            self._tail(c, away, dust_dir, length, (255, 225, 170), 0.9, view)
+        surface.blit(self.overlay, (0, 0))
+
+    def _tail(self, comet, start_dir, end_dir, length, color, spread, view):
+        """A fading tail from the comet, bending from start_dir to end_dir,
+        drawn back-to-front as soft circles that widen and fade."""
+        steps = 16
+        z = view.zoom
+        for i in range(steps, 0, -1):
+            t = i / steps
+            direction = (start_dir * (1 - t) + end_dir * t)
+            if direction.length() > 1e-6:
+                direction = direction.normalize()
+            p = view.to_screen(comet.pos + direction * length * t)
+            radius = max(1, round((comet.radius * 0.8 + length * spread * 0.12 * t) * z))
+            alpha = int(150 * (1 - t) ** 1.6 + 12)
+            pygame.draw.circle(self.overlay, (*color, min(alpha, 255)), (round(p.x), round(p.y)), radius)
