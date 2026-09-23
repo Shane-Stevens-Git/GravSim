@@ -147,8 +147,8 @@ def lagrange(sun_cfg, sun_fixed=False):
     there stay, and ones nudged a few degrees away trace 'tadpole' loops
     around them (easiest to see with the camera following the giant). L1, L2
     and L3 are balance points on a knife edge: those asteroids drift away.
-    A probe at L1 shows the fix real spacecraft use: small thruster burns
-    (station-keeping) keep it there while the L1 asteroid beside it drifts off.
+    Probes at L1 and L2 show the fix real spacecraft use: small thruster burns
+    (station-keeping) keep them there while the asteroids beside them drift off.
     The sun must be free here - L-points are defined for two bodies orbiting
     their shared center of mass. Giant/sun mass ratio 1.5% is well inside
     the L4/L5 stability limit (3.85%).
@@ -165,11 +165,12 @@ def lagrange(sun_cfg, sun_fixed=False):
                                vel=corotating_velocity(sun, giant, pos),
                                name=f"{label} asteroid", particle=True))
     points = lagrange_points(sun, giant)
-    probe = make_craft(Body(points["L1"] + pygame.Vector2(0, 0), 0.001, 4, (225, 232, 255),
-                            vel=corotating_velocity(sun, giant, points["L1"]),
-                            name="L1 probe"))
-    probe.pilot.set_mode("hold", hold=("L", sun, giant, "L1"))
-    bodies.append(probe)
+    for label in ("L1", "L2"):             # probes holding the two unstable points nearest the giant
+        probe = make_craft(Body(points[label], 0.001, 4, (225, 232, 255),
+                                vel=corotating_velocity(sun, giant, points[label]),
+                                name=f"{label} probe"))
+        probe.pilot.set_mode("hold", hold=("L", sun, giant, label))
+        bodies.append(probe)
     return scene(bodies, lagrange=(0, 1), zoom=1.0)
 
 
@@ -259,7 +260,7 @@ SCENARIOS = [
     ("Binary star", "Two stars orbiting each other, a planet circling both.", binary_star),
     ("Figure-eight", "Three stars chasing each other along a figure-8.", figure_eight),
     ("Asteroid belt", "300 asteroids and a giant that stirs them up.", asteroid_belt),
-    ("Lagrange points", "Asteroids at L1-L5, and a probe holding L1 with thrusters.", lagrange),
+    ("Lagrange points", "Asteroids at L1-L5; probes hold L1 and L2 with thrusters.", lagrange),
     ("Galaxy collision", "Two disk galaxies fly past and tear out tidal tails.", galaxy_collision),
     ("Shatter demo", "A head-on smash, then tides shred what falls sunward.", shatter_demo),
 ]

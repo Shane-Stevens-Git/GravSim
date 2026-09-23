@@ -66,7 +66,7 @@ python main.py
 | Binary star | A planet on a stable orbit around *both* stars. |
 | Figure-eight | Three equal stars sharing one figure-8 path. Marginally stable - it eventually breaks up. |
 | Asteroid belt | 300 test-particle asteroids; the giant's 2:1 resonance stirs up the middle of the belt (try 8x). |
-| Lagrange points | Asteroids at L1-L5. L4/L5 (green) hold them in tadpole loops; L1-L3 (amber) are unstable, so those drift off - while a **probe** beside the L1 asteroid holds L1 with small thruster burns (station-keeping). |
+| Lagrange points | Asteroids at L1-L5. L4/L5 (green) hold them in tadpole loops; L1-L3 (amber) are unstable, so those drift off - while **probes** beside the L1 and L2 asteroids hold those points with small thruster burns (station-keeping). |
 | Galaxy collision | 2,300 stars in two disk galaxies on a close, bound fly-by: tidal tails, bridges, stolen stars; the cores come back and merge. Try 4x. |
 | Shatter demo | Switches to SHATTER mode: a head-on planet/giant smash at ~2 s, a planet shredded by the sun's tides at ~3 s, and the smash remnant falling sunward to be shredded too. |
 
