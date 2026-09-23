@@ -50,6 +50,7 @@ class HUD:
         self.show_help = True
         self.sun_collapsed = False
         self.scenes_open = False
+        self.help_tab = 0
         self._panel_cache = {}
         self.regions = []       # (hit rect, action, reference rect)
         self.blockers = []      # panel rects that swallow clicks
@@ -245,59 +246,90 @@ class HUD:
         return rect
 
     # --- Controls panel (top-right) -----------------------------------------------
-    CONTROLS = [
-        ("Drag", "Throw a body"),
-        ("RMB", "Cancel throw"),
-        ("1-6 / click", "Choose body type"),
-        ("Click body", "Select / inspect it"),
-        ("Q", "Select tool (no throwing)"),
-        ("Arrows", "Fly selected craft (Manual)"),
-        ("Scroll", "Resize (keeps density)"),
-        ("Shift+Scroll", "Change mass only"),
-        ("Ctrl+Scroll", "Zoom (also + / -)"),
-        ("Middle-drag", "Pan the view"),
-        ("S", "Sun panel"),
-        ("P", "Scenes menu"),
-        ("K", "Lagrange points"),
-        ("O", "Orbit tool (click = orbit)"),
-        ("W", "Gravity field overlay"),
-        ("E", "Energy & momentum graph"),
-        ("X", "Sound on / off"),
-        ("B", "Ring around selected"),
-        ("Z (hold)", "Rewind"),
-        ("Ctrl+S / O", "Save / load scene"),
-        ("F5 / F9", "Quick save / load"),
-        ("Space", "Pause / resume"),
-        ("N", "Step one frame"),
-        (", / .", "Slower / faster"),
-        ("C", "Clear thrown bodies"),
-        ("R", "Reset scene"),
-        ("Esc", "Quit"),
+    # Controls legend, one tab per topic (Tab key or click to switch)
+    CONTROL_TABS = [
+        ("Bodies", [
+            ("Drag", "Throw a body"),
+            ("RMB", "Cancel a throw"),
+            ("1-6 / click", "Choose body type"),
+            ("Scroll", "Resize (keeps density)"),
+            ("Shift+Scroll", "Change mass only"),
+            ("O", "Orbit tool (click = orbit)"),
+            ("Click body", "Select / inspect it"),
+            ("Q", "Select tool (no throwing)"),
+            ("[  /  ]", "Selected: less / more mass"),
+            ("Del", "Delete selected"),
+            ("B", "Ring around selected"),
+            ("C", "Clear thrown bodies"),
+        ]),
+        ("View", [
+            ("Ctrl+Scroll", "Zoom (also + / -)"),
+            ("0", "Reset zoom"),
+            ("Middle-drag", "Pan the view"),
+            ("V", "Camera mode"),
+            ("G", "Camera follows selected"),
+            ("F11", "Fullscreen"),
+            ("L", "Trails"),
+            ("T", "Aim preview"),
+            ("W", "Gravity field overlay"),
+            ("K", "Lagrange points"),
+            ("E", "Energy & momentum graph"),
+            ("S", "Sun panel"),
+        ]),
+        ("Sim", [
+            ("Space", "Pause / resume"),
+            ("N", "Step one frame"),
+            (", / .", "Slower / faster"),
+            ("Z (hold)", "Rewind"),
+            ("M", "Merge / shatter / bounce"),
+            ("P", "Scenes menu"),
+            ("R", "Reset scene"),
+            ("Ctrl+S / O", "Save / load scene"),
+            ("F5 / F9", "Quick save / load"),
+            ("X", "Sound on / off"),
+            ("H", "Hide this panel"),
+            ("Esc", "Quit"),
+        ]),
+        ("Craft", [
+            ("6", "Spacecraft body type"),
+            ("Hold", "Keep station (L-point/orbit)"),
+            ("Transfer", "Click a planet: fly there"),
+            ("Follow", "Click a body: rendezvous"),
+            ("Manual", "Fly it yourself:"),
+            ("Up / Down", "Thrust / brake"),
+            ("Left / Right", "Turn"),
+            ("Off", "Engine off, coast"),
+        ]),
     ]
 
     def draw_controls(self, surface, compact=False):
-        """Full controls legend, or just an 'H Controls' button when hidden
+        """Controls legend with tabs, or just an 'H Controls' button when hidden
         (or when `compact`, e.g. while the inspector needs the space)."""
         if compact or not self.show_help:
             label = self.f_label.render("Controls", True, DIM)
-            rect = self.panel(surface, (self.w - PAD - label.get_width() - 58, PAD,
-                                        label.get_width() + 58, 34),
-                              bg=PANEL_BG_HI if self.hovered(
-                                  (self.w - PAD - label.get_width() - 58, PAD,
-                                   label.get_width() + 58, 34)) else PANEL_BG)
+            box = pygame.Rect(self.w - PAD - label.get_width() - 58, PAD, label.get_width() + 58, 34)
+            rect = self.panel(surface, box, bg=PANEL_BG_HI if self.hovered(box) else PANEL_BG)
             self.keycap(surface, "H", (rect.x + 12, rect.y + 8))
             surface.blit(label, (rect.x + 42, rect.y + 8))
             self.add(rect, ("key", pygame.K_h))
             return rect
-        row_h, key_w = 22, 100
-        rect = self.panel(surface, (self.w - PAD - 280, PAD, 280, 50 + row_h * len(self.CONTROLS)))
+        row_h, key_w, w = 22, 100, 290
+        rows = self.CONTROL_TABS[self.help_tab][1]
+        longest = max(len(r) for _, r in self.CONTROL_TABS)     # fixed height per panel
+        rect = self.panel(surface, (self.w - PAD - w, PAD, w, 86 + row_h * longest))
         x, y = rect.x + 14, rect.y + 12
-        self.text(surface, self.f_title, "CONTROLS", ACCENT, (x, y))
+        title = self.text(surface, self.f_title, "CONTROLS", ACCENT, (x, y))
+        self.text(surface, self.f_small, "Tab: next tab", DIM, (title.right + 10, y + 3))
         hide = self.text(surface, self.f_label, "hide", DIM, (rect.right - 14, y + 1), "topright")
         cap = self.keycap(surface, "H", (hide.x - 26, y))
         self.add(cap.union(hide).inflate(8, 8), ("key", pygame.K_h))
-        y += 30
-        for key, desc in self.CONTROLS:
+        y += 28
+        tab_w = (w - 28 - 3 * 4) // len(self.CONTROL_TABS)
+        for i, (name, _) in enumerate(self.CONTROL_TABS):
+            self.button(surface, (x + i * (tab_w + 4), y, tab_w, 24), name, ("help_tab", i),
+                        on=i == self.help_tab, small=True)
+        y += 36
+        for key, desc in rows:
             self.keycap(surface, key, (x, y))
             self.text(surface, self.f_label, desc, TEXT, (x + key_w, y + 1))
             y += row_h

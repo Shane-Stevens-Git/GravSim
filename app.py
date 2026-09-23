@@ -450,6 +450,9 @@ class App:
             self.save_scene()
         elif ctrl and k == pygame.K_o:
             self.load_scene_file()
+        elif k == pygame.K_TAB:                 # cycle the controls tabs
+            self.hud.show_help = True
+            self.hud.help_tab = (self.hud.help_tab + 1) % len(ui.HUD.CONTROL_TABS)
         elif k == pygame.K_F11:
             self.toggle_fullscreen()
         elif k == pygame.K_F5:
@@ -578,6 +581,9 @@ class App:
                 self.selection.ring_color = tuple(arg)
             else:
                 self.selection.color = tuple(arg)
+        elif kind == "help_tab":
+            self.hud.help_tab = arg
+            self.hud.show_help = True
         elif kind == "select_tool":
             self.select_tool = not self.select_tool
         elif kind == "pilot":
