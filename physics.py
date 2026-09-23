@@ -1,0 +1,184 @@
+"""Gravity, integration, collisions and orbit math. No drawing here."""
+import numpy as np
+import pygame
+
+from config import *
+
+
+def accelerations(pos, mass):
+    """N-body gravity: a_i = sum_j G*m_j * (p_j - p_i) / |p_j - p_i|^3."""
+    d = pos[None, :, :] - pos[:, None, :]           # d[i, j] = p_j - p_i
+    dist_sq = (d * d).sum(axis=-1) + SOFTENING ** 2
+    inv_r3 = dist_sq ** -1.5
+    np.fill_diagonal(inv_r3, 0.0)                   # no self-attraction
+    return G * (d * (mass[None, :] * inv_r3)[:, :, None]).sum(axis=1)
+
+
+def pack(bodies):
+    """Body objects -> NumPy arrays."""
+    pos = np.array([(b.pos.x, b.pos.y) for b in bodies], dtype=float).reshape(-1, 2)
+    vel = np.array([(b.vel.x, b.vel.y) for b in bodies], dtype=float).reshape(-1, 2)
+    mass = np.array([b.mass for b in bodies], dtype=float)
+    movable = np.array([0.0 if b.fixed else 1.0 for b in bodies])[:, None]
+    return pos, vel, mass, movable
+
+
+def verlet(pos, vel, acc, mass, movable, dt):
+    """One velocity-Verlet step, in place. Returns the new accelerations."""
+    pos += movable * (vel * dt + 0.5 * acc * dt * dt)
+    new_acc = accelerations(pos, mass)
+    vel += movable * (0.5 * (acc + new_acc) * dt)
+    return new_acc
+
+
+def find_collisions(pos, vel, radii, mode):
+    """Index pairs (i, j), i < j, of overlapping bodies.
+
+    In bounce mode only pairs still moving toward each other count, so a
+    pair that has already bounced isn't hit again while separating.
+    """
+    d = pos[None, :, :] - pos[:, None, :]
+    dist = np.hypot(d[..., 0], d[..., 1])
+    hit = dist < (radii[:, None] + radii[None, :])
+    if mode == "bounce":
+        approaching = ((vel[None, :, :] - vel[:, None, :]) * d).sum(axis=-1) < 0
+        hit &= approaching
+    i, j = np.nonzero(np.triu(hit, k=1))
+    return list(zip(i.tolist(), j.tolist()))
+
+
+def merge(a, b):
+    """Perfectly inelastic collision: b is absorbed into a.
+
+    Conserves mass and momentum; the merged body sits at the combined
+    center of mass and keeps the combined volume (radius^3 adds up).
+    """
+    m = a.mass + b.mass
+    if a.fixed or b.fixed:
+        anchor = a if a.fixed else b
+        a.pos.update(anchor.pos)
+        a.vel.update(0, 0)
+        a.fixed = True
+    else:
+        a.pos = (a.pos * a.mass + b.pos * b.mass) / m
+        a.vel = (a.vel * a.mass + b.vel * b.mass) / m
+    if a.kind == "blackhole" or b.kind == "blackhole":
+        a.kind, a.color = "blackhole", (0, 0, 0)     # anything + black hole = black hole
+    else:
+        a.color = tuple(int((ca * a.mass + cb * b.mass) / m) for ca, cb in zip(a.color, b.color))
+    a.radius = max(2, round((a.radius ** 3 + b.radius ** 3) ** (1 / 3)))
+    a.mass = m
+
+
+def bounce(a, b):
+    """Collision with restitution: impulse along the line of centers,
+    plus pushing the bodies apart so they no longer overlap."""
+    inv_a = 0.0 if a.fixed else 1.0 / a.mass
+    inv_b = 0.0 if b.fixed else 1.0 / b.mass
+    if inv_a + inv_b == 0:
+        return
+    delta = b.pos - a.pos
+    dist = delta.length()
+    n = delta / dist if dist > 1e-9 else pygame.Vector2(1, 0)
+    rel = (b.vel - a.vel).dot(n)
+    if rel < 0:
+        j = -(1 + RESTITUTION) * rel / (inv_a + inv_b)
+        a.vel -= n * (j * inv_a)
+        b.vel += n * (j * inv_b)
+    overlap = a.radius + b.radius - dist
+    if overlap > 0:
+        a.pos -= n * (overlap * inv_a / (inv_a + inv_b))
+        b.pos += n * (overlap * inv_b / (inv_a + inv_b))
+
+
+def simulate(bodies, dt, steps, mode):
+    """Advance `steps` fixed steps, handling collisions. Mutates `bodies`."""
+    done = 0
+    while done < steps and bodies:
+        pos, vel, mass, movable = pack(bodies)
+        radii = np.array([b.radius for b in bodies], dtype=float)
+        acc = accelerations(pos, mass)
+        pairs = []
+        while done < steps and not pairs:
+            acc = verlet(pos, vel, acc, mass, movable, dt)
+            done += 1
+            pairs = find_collisions(pos, vel, radii, mode)
+        for b, p, v in zip(bodies, pos, vel):
+            b.pos.update(p[0], p[1])
+            b.vel.update(v[0], v[1])
+        if not pairs:
+            break
+        # Resolve collisions in Python, then repack and keep going.
+        gone = set()
+        for i, j in pairs:
+            if i in gone or j in gone:
+                continue
+            a, b = bodies[i], bodies[j]
+            if mode == "merge":
+                if b.mass > a.mass:          # heavier body survives
+                    a, b = b, a
+                    i, j = j, i
+                merge(a, b)
+                gone.add(j)
+            else:
+                bounce(a, b)
+        if gone:
+            bodies[:] = [b for k, b in enumerate(bodies) if k not in gone]
+
+
+def predict_path(bodies, start, vel0, frame_body=None, test_radius=0):
+    """Preview a throw: a massless test particle flown through the n-body
+    system (the heaviest bodies move during the preview too).
+
+    If frame_body is given (the body the camera follows), the path is
+    returned relative to it, so it matches what you see on screen.
+    """
+    heavy = sorted(bodies, key=lambda b: b.mass, reverse=True)[:PREVIEW_MAX_BODIES]
+    if frame_body is not None and frame_body not in heavy:
+        heavy.append(frame_body)
+    k = heavy.index(frame_body) if frame_body is not None else None
+    pos, vel, mass, movable = pack(heavy)
+    radii = np.array([b.radius for b in heavy], dtype=float)
+    frame0 = pos[k].copy() if k is not None else None
+    pos = np.vstack([pos, start])
+    vel = np.vstack([vel, vel0])
+    mass = np.append(mass, 0.0)
+    movable = np.vstack([movable, [[1.0]]])
+    acc = accelerations(pos, mass)
+    points = []
+    for i in range(PREVIEW_STEPS):
+        acc = verlet(pos, vel, acc, mass, movable, PREVIEW_DT)
+        p = pos[-1].copy()
+        if (np.hypot(*(pos[:-1] - p).T) < radii + test_radius).any():
+            break                                   # would hit something
+        if k is not None:
+            p -= pos[k] - frame0
+        if i % 3 == 0:
+            points.append(p)
+    return points
+
+
+def orbit_info(rel_pos, rel_vel, central_mass, impact_radius):
+    """Two-body orbit a launch would produce around `central_mass`.
+
+    Returns eccentricity, whether the orbit escapes (energy >= 0), and
+    whether its closest approach is inside `impact_radius`.
+    """
+    mu = G * central_mass
+    r = rel_pos.length()
+    v2 = rel_vel.length_squared()
+    if r < 1e-6:
+        return None
+    energy = v2 / 2 - mu / r
+    e_vec = ((v2 - mu / r) * rel_pos - rel_pos.dot(rel_vel) * rel_vel) / mu
+    e = e_vec.length()
+    if energy >= 0:
+        return {"e": e, "escape": True, "impact": False}
+    a = -mu / (2 * energy)
+    periapsis = a * (1 - e)
+    return {"e": e, "escape": False, "impact": periapsis < impact_radius}
+
+
+def circular_speed(central_mass, r):
+    """Speed needed for a circular orbit of radius r: v = sqrt(G*M/r)."""
+    return (G * central_mass / max(r, 1e-6)) ** 0.5

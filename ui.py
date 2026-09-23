@@ -20,7 +20,7 @@ HOVER_BG = (32, 40, 66)
 KEY_BG = (36, 44, 70)
 KEY_BORDER = (80, 92, 130)
 TRACK = (40, 48, 74)
-BLACK_HOLE_RING = (255, 150, 70)
+from config import BLACK_HOLE_RING
 
 # Orbit-status colors used by the aim readout (and the aim arrow)
 GOOD = (110, 220, 150)
