@@ -37,6 +37,7 @@ MASS_RANGE = (0.05, 20.0)
 
 # --- Trails ------------------------------------------------------------------
 TRAIL_LENGTH = 240          # frames of history per body (4 s at 60 fps)
+SUN_TRAIL_LENGTH = 900      # the sun moves slowly, so it keeps a longer trail (15 s)
 TRAIL_BANDS = 8             # fade is drawn in this many brightness bands
 
 # Body presets, selected with number keys 1-5: (name, mass, radius, color)
@@ -300,6 +301,7 @@ def main():
 
     bodies = make_scene()
     sun = bodies[0]             # the "main" body: camera target, HUD reference
+    sun.trail = deque(maxlen=SUN_TRAIL_LENGTH)
     preset_idx = 2              # start on "Planet"
     size_mult = mass_mult = 1.0
     drag_start = None           # screen position of mouse-down while aiming
@@ -355,6 +357,7 @@ def main():
                 elif event.key == pygame.K_r:
                     bodies = make_scene(sun.fixed)
                     sun = bodies[0]
+                    sun.trail = deque(maxlen=SUN_TRAIL_LENGTH)
                 elif pygame.K_1 <= event.key < pygame.K_1 + len(PRESETS):
                     preset_idx = event.key - pygame.K_1
                     size_mult = mass_mult = 1.0
@@ -386,6 +389,7 @@ def main():
 
         if sun not in bodies and bodies:          # sun got swallowed or flung away
             sun = max(bodies, key=lambda b: b.mass)
+            sun.trail = deque(maxlen=SUN_TRAIL_LENGTH)   # its old trail was sun-relative
         following = follow and sun in bodies
         if following:
             cam = sun.pos - pygame.Vector2(WIDTH / 2, HEIGHT / 2)
@@ -398,9 +402,13 @@ def main():
         if show_trails:
             for b in bodies:
                 if not paused:
-                    b.trail.append((b.pos.x, b.pos.y) if not following
+                    # When following, other bodies' trails are stored relative to
+                    # the sun (so orbits draw as clean loops), but the sun's own
+                    # trail stays in world coordinates: it shows the sun's path
+                    # through space, streaming out behind it on screen.
+                    b.trail.append((b.pos.x, b.pos.y) if not following or b is sun
                                    else (b.pos.x - sun.pos.x, b.pos.y - sun.pos.y))
-                if following:   # trails stored relative to the sun
+                if following and b is not sun:
                     b.draw_trail(screen, -sun.pos + cam)
                 else:
                     b.draw_trail(screen, cam)
