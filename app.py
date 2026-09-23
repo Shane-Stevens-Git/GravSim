@@ -8,9 +8,11 @@ import pygame
 import ui
 from body import Body, View
 from config import *
+from field import FieldOverlay
 from history import History
 from physics import (circular_speed, dominant_body, orbit_info, orbit_points,
-                     orbital_elements, predict_path, simulate, strongest_pull_at)
+                     orbital_elements, predict_path, simulate, strongest_pull_at,
+                     system_energy)
 from render import draw_arrow, make_starfield
 from scenes import (QUICKSAVE, SCENARIOS, ask_path, lagrange_points, load_file,
                     place_in_orbit, ring_around, save_file, to_dict)
@@ -49,6 +51,12 @@ class App:
         self.history = History()    # rewind buffer
         self.rewinding = False      # Z held
         self.orbit_tool = False     # O: a click places a body on a circular orbit
+        self.field = FieldOverlay()
+        self.show_field = False     # W: gravity field overlay
+        self.show_energy = False    # E: energy & momentum graph
+        self.energy_log = deque(maxlen=int(ENERGY_WINDOW / ENERGY_SAMPLE))
+        self.energy_scales = (1.0, 1.0)
+        self.next_energy = 0.0
         self.scenario_idx = 0
         self.reset_source = ("scenario", 0)
         self.start_scenario(0)
@@ -93,6 +101,7 @@ class App:
         self.sim_time = sc.get("sim_time", 0.0)
         self.accumulator = 0.0
         self.history.clear(self.sim_time)
+        self.reset_energy_log()
         self.clear_trails()
 
     def sun_settings(self):
@@ -336,6 +345,11 @@ class App:
             self.rewinding = True
         elif k == pygame.K_o:
             self.orbit_tool = not self.orbit_tool
+        elif k == pygame.K_w:
+            self.show_field = not self.show_field
+        elif k == pygame.K_e:
+            self.show_energy = not self.show_energy
+            self.reset_energy_log()
         elif k == pygame.K_b:
             self.add_ring()
         elif k == pygame.K_SPACE:
@@ -471,6 +485,20 @@ class App:
         self.bodies.extend(ring)
         self.notify(msg)
 
+    def reset_energy_log(self):
+        self.energy_log.clear()
+        self.next_energy = self.sim_time
+
+    def sample_energy(self):
+        if self.sim_time < self.next_energy:
+            return
+        self.next_energy = self.sim_time + ENERGY_SAMPLE
+        ke, pe, p = system_energy(self.bodies)
+        self.energy_log.append((self.sim_time, ke + pe, p.length()))
+        real = [b for b in self.bodies if not b.particle]
+        self.energy_scales = (abs(ke) + abs(pe) or 1.0,
+                              sum(b.mass * b.vel.length() for b in real) or 1.0)
+
     def rewind(self, snapshots=1):
         """Step back `snapshots` entries in the rewind buffer."""
         snap = None
@@ -481,6 +509,7 @@ class App:
         self.sim_time, self.bodies, sun, target = snap
         self.sun, self.target = sun, target
         self.accumulator = 0.0
+        self.reset_energy_log()
         self.after_removals()
         self.clear_trails()
         return True
@@ -547,6 +576,8 @@ class App:
             simulate(self.bodies, PHYSICS_DT, steps, self.mode)
             self.sim_time += steps * PHYSICS_DT
             self.history.record(self.sim_time, self.bodies, self.sun, self.target)
+            if self.show_energy:
+                self.sample_energy()
 
         # Delete bodies far outside the view (farther when zoomed out)
         cull = max(CULL_DISTANCE, 2 * math.hypot(WIDTH, HEIGHT) / self.view.zoom)
@@ -616,6 +647,8 @@ class App:
         following, target = self.following, self.target
 
         screen.blit(self.background, (0, 0))
+        if self.show_field:
+            self.field.draw(screen, self.bodies, view)
         if self.show_trails:
             for b in self.bodies:
                 rel = following and b is not target
@@ -681,6 +714,10 @@ class App:
              ("key", pygame.K_k)),
             ("O", "Orbit tool", "ON" if self.orbit_tool else "OFF", self.orbit_tool,
              ("key", pygame.K_o)),
+            ("W", "Gravity field", "ON" if self.show_field else "OFF", self.show_field,
+             ("key", pygame.K_w)),
+            ("E", "Energy graph", "ON" if self.show_energy else "OFF", self.show_energy,
+             ("key", pygame.K_e)),
             ("Z", "Rewind", f"{self.history.seconds:.0f} s", self.history.seconds > 0,
              ("rewind", 25)),
             ("P", "Scene", (SCENARIOS[self.scenario_idx][0] if self.scenario_idx is not None
@@ -696,7 +733,9 @@ class App:
             sun.mass, sun.radius,
             math.log(max(sun.mass, 1) / mlo) / math.log(mhi / mlo),
             (sun.radius - rlo) / (rhi - rlo),
-            sun.fixed, sun.accent)
+            sun.fixed, sun.accent, compact=self.show_energy)
+        if self.show_energy:
+            hud.draw_energy(screen, list(self.energy_log), *self.energy_scales)
         controls = hud.draw_controls(screen, compact=inspector is not None)
         if inspector is not None:
             hud.draw_inspector(screen, controls.bottom + 10, inspector)

@@ -185,9 +185,10 @@ class HUD:
 
     # --- Sun panel (left, under the status panel) ------------------------------------
     def draw_sun_panel(self, surface, y, sun_types, type_idx, type_name, mass, radius,
-                       mass_t, radius_t, pinned, color):
+                       mass_t, radius_t, pinned, color, compact=False):
         header_h = 36
-        if self.sun_collapsed:
+        collapsed = self.sun_collapsed or compact
+        if collapsed:
             rect = self.panel(surface, (PAD, y, SIDE_W, header_h))
         else:
             rect = self.panel(surface, (PAD, y, SIDE_W, 250))
@@ -197,11 +198,11 @@ class HUD:
         if self.hovered(header):
             pygame.draw.rect(surface, HOVER_BG, header.inflate(-8, -8), border_radius=6)
         self.text(surface, self.f_title, "SUN", ACCENT, (x, rect.y + 10))
-        hint = self.text(surface, self.f_label, "show" if self.sun_collapsed else "hide", DIM,
+        hint = self.text(surface, self.f_label, "show" if collapsed else "hide", DIM,
                          (rect.right - 14, rect.y + 10), "topright")
         self.keycap(surface, "S", (hint.x - 26, rect.y + 9))
         self.add(header, ("key", pygame.K_s))
-        if self.sun_collapsed:
+        if collapsed:
             return rect
 
         # Star-type swatches
@@ -252,6 +253,8 @@ class HUD:
         ("P", "Scenes menu"),
         ("K", "Lagrange points"),
         ("O", "Orbit tool (click = orbit)"),
+        ("W", "Gravity field overlay"),
+        ("E", "Energy & momentum graph"),
         ("B", "Ring around selected"),
         ("Z (hold)", "Rewind"),
         ("Ctrl+S / O", "Save / load scene"),
@@ -478,6 +481,74 @@ class HUD:
             txt = label if orbit["escape"] or orbit["impact"] else f"{label}  e={orbit['e']:.2f}"
             self.text(surface, self.f_label, txt, color, (tx + 14, ty))
         return color
+
+    # --- Energy & momentum graph (bottom-left) -----------------------------------------
+    def sparkline(self, surface, rect, times, values, min_span):
+        """One small line chart: thin line, faint midline, hover crosshair.
+        Returns the index of the hovered sample, or None."""
+        rect = pygame.Rect(rect)
+        pygame.draw.line(surface, (34, 42, 66), (rect.x, rect.centery), (rect.right, rect.centery))
+        if len(values) < 2:
+            return None
+        lo, hi = min(values), max(values)
+        mid, span = (lo + hi) / 2, max(hi - lo, min_span)
+        lo, hi = mid - span * 0.6, mid + span * 0.6
+        t0, t1 = times[0], max(times[-1], times[0] + 1e-9)
+
+        def pt(t, v):
+            return (rect.x + (t - t0) / (t1 - t0) * rect.width,
+                    rect.bottom - (v - lo) / (hi - lo) * rect.height)
+
+        pygame.draw.lines(surface, ACCENT, False, [pt(t, v) for t, v in zip(times, values)], 2)
+        if rect.inflate(0, 10).collidepoint(self.mouse):       # hover readout
+            frac = (self.mouse[0] - rect.x) / rect.width
+            i = min(range(len(times)), key=lambda k: abs(times[k] - (t0 + frac * (t1 - t0))))
+            x, y = pt(times[i], values[i])
+            pygame.draw.line(surface, DIM, (x, rect.y), (x, rect.bottom))
+            pygame.draw.circle(surface, TEXT, (round(x), round(y)), 4)
+            pygame.draw.circle(surface, ACCENT, (round(x), round(y)), 4, 2)
+            return i
+        return None
+
+    def draw_energy(self, surface, log, energy_scale, momentum_scale):
+        """log: list of (t, E, |p|). Two separate charts - different units,
+        so never one chart with two y-axes."""
+        w, h = SIDE_W, 206
+        rect = self.panel(surface, (PAD, self.h - PAD - h, w, h))
+        x, y = rect.x + 14, rect.y + 12
+        self.text(surface, self.f_title, "ENERGY", ACCENT, (x, y))
+        hide = self.text(surface, self.f_label, "hide", DIM, (rect.right - 14, y + 1), "topright")
+        cap = self.keycap(surface, "E", (hide.x - 26, y))
+        self.add(cap.union(hide).inflate(8, 8), ("key", pygame.K_e))
+        times = [s[0] for s in log]
+        energies = [s[1] for s in log]
+        moms = [s[2] for s in log]
+        e0 = energies[0] if energies else 0.0
+        drift = (energies[-1] - e0) / abs(e0) * 100 if energies and e0 else 0.0
+
+        def sci(v):
+            return f"{v:.3g}" if abs(v) < 1e5 else f"{v:.2e}"
+
+        # Charts first (they report the hovered sample), then the labels,
+        # which show the hovered value instead of the latest one.
+        y += 30
+        hi_e = self.sparkline(surface, (x, y + 38, w - 28, 34), times, energies,
+                              energy_scale * 1e-3)
+        hi_p = self.sparkline(surface, (x, y + 108, w - 28, 34), times, moms,
+                              momentum_scale * 1e-3 + 1e-6)
+        hover = hi_e if hi_e is not None else hi_p
+        k = hover if hover is not None else len(times) - 1
+        self.text(surface, self.f_label, "Total energy", DIM, (x, y))
+        self.text(surface, self.f_num, sci(energies[k]) if energies else "-", TEXT,
+                  (rect.right - 14, y + 1), "topright")
+        note = (f"at t = {times[k]:.1f} s" if hover is not None
+                else f"change over window {drift:+.4f}%")
+        self.text(surface, self.f_small, note, DIM, (x, y + 18))
+        y += 84
+        self.text(surface, self.f_label, "Momentum |p|", DIM, (x, y))
+        self.text(surface, self.f_num, sci(moms[k]) if moms else "-", TEXT,
+                  (rect.right - 14, y + 1), "topright")
+        return rect
 
     def draw_rewind(self, surface, sim_time, seconds_left):
         img = self.f_title.render("REWINDING", True, TEXT)

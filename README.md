@@ -31,6 +31,8 @@ python main.py
 | **P** | Scenes menu (then 1-6 or click to load a preset) |
 | **O** | Orbit tool: a click places the next body on a circular orbit around whatever pulls hardest there (Shift+click: other direction) |
 | **B** | Add a ring of particles around the selected body (inside its Hill sphere) |
+| **W** | Gravity field overlay: potential wells as a heatmap with contour lines |
+| **E** | Energy & momentum graph (hover for values). Flat = conserved; steps = something was added or merged |
 | **Z** (hold) | Rewind, up to 60 s back (clicking the Rewind row jumps back 5 s) |
 | **K** | Show Lagrange points L1-L5 (for the selected body and what it orbits) |
 | **Ctrl+S** / **Ctrl+O** | Save / load a scene file (saved in `saves/`) |

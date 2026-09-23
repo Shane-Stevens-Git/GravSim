@@ -67,3 +67,12 @@ ZOOM_STEP = 1.15            # zoom factor per Ctrl+scroll notch or +/- press
 # --- Spawn tools ----------------------------------------------------------------
 RING_PARTICLES = 80         # B: particles in a ring around the selected body
 RING_COLOR = (190, 180, 160)
+
+# --- Gravity field overlay (W) ----------------------------------------------------
+FIELD_CELL = 5              # grid spacing in screen px (bigger = faster, blurrier)
+FIELD_LOG_TOP = 5.3         # log10 of the deepest potential shown at full brightness
+FIELD_LOG_RANGE = 2.2       # decades of depth shown before fading to transparent
+
+# --- Energy graph (E) ---------------------------------------------------------------
+ENERGY_SAMPLE = 0.1         # s of sim time between samples
+ENERGY_WINDOW = 30          # s of history shown

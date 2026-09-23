@@ -281,3 +281,25 @@ def hill_radius(body, primary):
     inside it (about half)."""
     d = body.pos.distance_to(primary.pos)
     return d * (body.mass / (3 * primary.mass)) ** (1 / 3)
+
+
+def system_energy(bodies):
+    """(kinetic, potential, momentum Vector2) of the regular bodies.
+
+    Test particles are left out: they exert no gravity, so they're not part
+    of the conserved system. The potential uses the same softening as the
+    force, so with no collisions total energy should stay constant - the
+    graph shows how well the integrator does, and the steps where
+    inelastic merges turn motion into (unmodelled) heat.
+    """
+    real = [b for b in bodies if not b.particle]
+    if not real:
+        return 0.0, 0.0, pygame.Vector2()
+    pos, vel, mass, _ = pack(real)
+    ke = 0.5 * float((mass * (vel ** 2).sum(axis=1)).sum())
+    d = pos[None, :, :] - pos[:, None, :]
+    r = np.sqrt((d * d).sum(axis=-1) + SOFTENING ** 2)
+    iu = np.triu_indices(len(real), k=1)
+    pe = -float((G * mass[:, None] * mass[None, :] / r)[iu].sum())
+    p = (vel * mass[:, None]).sum(axis=0)
+    return ke, pe, pygame.Vector2(float(p[0]), float(p[1]))
