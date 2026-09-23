@@ -3,6 +3,7 @@
 # --- Window / timing -------------------------------------------------------
 WIDTH, HEIGHT = 1280, 800
 FPS = 60
+MIN_WINDOW = (1100, 720)    # smaller windows get resized back up to this (UI needs the room)
 BG_COLOR = (8, 10, 20)
 
 # --- Physics -----------------------------------------------------------------

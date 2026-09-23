@@ -10,10 +10,14 @@ from config import *
 class View:
     """Camera: which world point sits at the screen center, and the zoom."""
 
-    def __init__(self):
-        self.screen_center = pygame.Vector2(WIDTH / 2, HEIGHT / 2)
-        self.center = pygame.Vector2(self.screen_center)
+    def __init__(self, size=(WIDTH, HEIGHT)):
+        self.screen_center = pygame.Vector2(size[0] / 2, size[1] / 2)
+        self.center = pygame.Vector2(WIDTH / 2, HEIGHT / 2)
         self.zoom = 1.0
+
+    def resize(self, size):
+        """Window resized: keep the same world point in the middle."""
+        self.screen_center = pygame.Vector2(size[0] / 2, size[1] / 2)
 
     def to_screen(self, p):
         return (pygame.Vector2(p) - self.center) * self.zoom + self.screen_center
@@ -91,7 +95,8 @@ class Body:
         p = view.to_screen(self.pos)
         cx, cy = round(p.x), round(p.y)
         r = max(1, round(self.radius * view.zoom))
-        if not (-r * 5 < cx < WIDTH + r * 5 and -r * 5 < cy < HEIGHT + r * 5):
+        sw, sh = surface.get_size()
+        if not (-r * 5 < cx < sw + r * 5 and -r * 5 < cy < sh + r * 5):
             return
         if 2 <= r <= 90 and not self.particle:
             glow = self.glow_surface(r, self.accent, self.kind in ("star", "blackhole"))

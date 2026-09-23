@@ -19,15 +19,23 @@ CONTOUR = np.array([200, 210, 255], dtype=float)
 
 class FieldOverlay:
     def __init__(self):
-        self.gw, self.gh = WIDTH // FIELD_CELL, HEIGHT // FIELD_CELL
-        self.small = pygame.Surface((self.gw, self.gh), pygame.SRCALPHA)
+        self.size = None
         self.image = None
         self.frame = 0
-        ix = (np.arange(self.gw) + 0.5) * FIELD_CELL - WIDTH / 2
-        iy = (np.arange(self.gh) + 0.5) * FIELD_CELL - HEIGHT / 2
+
+    def _build(self, size):
+        """(Re)build the sample grid for a window size."""
+        self.size = size
+        self.gw, self.gh = max(1, size[0] // FIELD_CELL), max(1, size[1] // FIELD_CELL)
+        self.small = pygame.Surface((self.gw, self.gh), pygame.SRCALPHA)
+        ix = (np.arange(self.gw) + 0.5) * FIELD_CELL - size[0] / 2
+        iy = (np.arange(self.gh) + 0.5) * FIELD_CELL - size[1] / 2
         self.sx, self.sy = np.meshgrid(ix, iy, indexing="ij")   # (x, y) like surfarray
+        self.image = None
 
     def draw(self, surface, bodies, view):
+        if surface.get_size() != self.size:
+            self._build(surface.get_size())
         # The field changes smoothly, so recompute every other frame.
         if self.image is None or self.frame % 2 == 0:
             self.image = self._render(bodies, view)
@@ -58,4 +66,4 @@ class FieldOverlay:
         alpha = np.maximum(alpha, 75 * line)
         pygame.surfarray.pixels3d(self.small)[:] = rgb.astype(np.uint8)
         pygame.surfarray.pixels_alpha(self.small)[:] = alpha.astype(np.uint8)
-        return pygame.transform.smoothscale(self.small, (WIDTH, HEIGHT))
+        return pygame.transform.smoothscale(self.small, self.size)

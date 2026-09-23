@@ -31,14 +31,16 @@ class App:
 
     def __init__(self):
         pygame.init()
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        self.windowed_size = self.initial_size()
+        self.fullscreen = False
+        self.screen = pygame.display.set_mode(self.windowed_size, pygame.RESIZABLE)
         pygame.display.set_caption("GravSim")
         self.clock = pygame.time.Clock()
-        self.hud = ui.HUD(WIDTH, HEIGHT)
+        self.hud = ui.HUD(*self.screen.get_size())
         self.starfield = Starfield()
         self.flashes = Flashes()
         self.sound = Sound()
-        self.view = View()
+        self.view = View(self.screen.get_size())
 
         self.preset_idx = 2         # start on "Planet"
         self.size_mult = self.mass_mult = 1.0
@@ -78,6 +80,36 @@ class App:
         self.scenario_idx = 0
         self.reset_source = ("scenario", 0)
         self.start_scenario(0)
+
+    # --- Window ---------------------------------------------------------------------------
+    @staticmethod
+    def initial_size():
+        """Default window size, shrunk to fit smaller desktops."""
+        info = pygame.display.Info()
+        w, h = WIDTH, HEIGHT
+        if info.current_w > 0 and info.current_h > 0:
+            w = min(w, int(info.current_w * 0.95))
+            h = min(h, int(info.current_h * 0.9))
+        return max(w, MIN_WINDOW[0]), max(h, MIN_WINDOW[1])
+
+    def on_resize(self, size=None):
+        """Window changed size: re-layout panels and the camera."""
+        if size is not None and not self.fullscreen:
+            w, h = max(size[0], MIN_WINDOW[0]), max(size[1], MIN_WINDOW[1])
+            if (w, h) != tuple(size):             # too small: snap back to the minimum
+                pygame.display.set_mode((w, h), pygame.RESIZABLE)
+            self.windowed_size = (w, h)
+        self.screen = pygame.display.get_surface()
+        self.hud.w, self.hud.h = self.screen.get_size()
+        self.view.resize(self.screen.get_size())
+
+    def toggle_fullscreen(self):
+        self.fullscreen = not self.fullscreen
+        if self.fullscreen:
+            pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+        else:
+            pygame.display.set_mode(self.windowed_size, pygame.RESIZABLE)
+        self.on_resize()
 
     # --- State helpers -----------------------------------------------------------
     @property
@@ -418,6 +450,8 @@ class App:
             self.save_scene()
         elif ctrl and k == pygame.K_o:
             self.load_scene_file()
+        elif k == pygame.K_F11:
+            self.toggle_fullscreen()
         elif k == pygame.K_F5:
             self.save_scene(QUICKSAVE)
         elif k == pygame.K_F9:
@@ -654,6 +688,8 @@ class App:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
+            elif event.type == pygame.VIDEORESIZE:
+                self.on_resize((event.w, event.h))
             elif event.type == pygame.KEYDOWN:
                 self.handle_key(event.key)
             elif event.type == pygame.KEYUP and event.key == pygame.K_z:
@@ -744,7 +780,7 @@ class App:
                 self.sample_energy()
 
         # Delete bodies far outside the view (farther when zoomed out)
-        cull = max(CULL_DISTANCE, 2 * math.hypot(WIDTH, HEIGHT) / self.view.zoom)
+        cull = max(CULL_DISTANCE, 2 * math.hypot(*self.screen.get_size()) / self.view.zoom)
         self.bodies = [b for b in self.bodies
                        if b.fixed or b is self.sun or b is self.target
                        or b.pos.distance_to(self.view.center) < cull]
@@ -914,20 +950,21 @@ class App:
                                  self.sim_time, toggles)
         ti = self.sun_type_index()
         (mlo, mhi), (rlo, rhi) = SUN_MASS_RANGE, SUN_RADIUS_RANGE
-        hud.draw_sun_panel(
+        left = status.copy()
+        left.union_ip(hud.draw_sun_panel(
             screen, status.bottom + 10, SUN_TYPES, ti,
             SUN_TYPES[ti][0] if ti is not None else "Custom",
             sun.mass, sun.radius,
             math.log(max(sun.mass, 1) / mlo) / math.log(mhi / mlo),
             (sun.radius - rlo) / (rhi - rlo),
-            sun.fixed, sun.accent, compact=self.show_energy)
+            sun.fixed, sun.accent, compact=self.show_energy))
         if self.show_energy:
-            hud.draw_energy(screen, list(self.energy_log), *self.energy_scales)
+            left.union_ip(hud.draw_energy(screen, list(self.energy_log), *self.energy_scales))
         controls = hud.draw_controls(screen, compact=inspector is not None)
         if inspector is not None:
             hud.draw_inspector(screen, controls.bottom + 10, inspector)
         hud.draw_toolbar(screen, PRESETS, self.preset_idx, r, m, self.size_mult,
-                         self.mass_mult, SIZE_RANGE, MASS_RANGE, self.select_tool)
+                         self.mass_mult, SIZE_RANGE, MASS_RANGE, self.select_tool, avoid=left)
         if hud.scenes_open:
             hud.draw_scenes(screen, [(n, d) for n, d, _ in SCENARIOS], self.scenario_idx)
         if self.rewinding:

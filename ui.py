@@ -471,11 +471,17 @@ class HUD:
 
     # --- Body toolbar (bottom-center) -------------------------------------------------
     def draw_toolbar(self, surface, presets, selected_idx, radius, mass, size_mult, mass_mult,
-                     size_range, mass_range, select_on=False):
+                     size_range, mass_range, select_on=False, avoid=None):
+        """`avoid`: rect of the left-hand panels. If they reach down into the
+        toolbar's row (small windows), the toolbar starts to their right and
+        its cards narrow to fit."""
         card_w, card_h, gap, info_w = 92, 80, 8, 230
-        total = (len(presets) + 1) * (card_w + gap) + info_w
-        x = (self.w - total) // 2
+        n = len(presets) + 1
         y = self.h - PAD - card_h
+        x = (self.w - (n * (card_w + gap) + info_w)) // 2
+        if avoid is not None and avoid.bottom > y - 8 and x < avoid.right + 10:
+            x = avoid.right + 10
+            card_w = max(60, min(card_w, (self.w - PAD - x - info_w) // n - gap))
 
         # Select tool card: clicks pick bodies, never create them
         hov = self.hovered((x, y, card_w, card_h))

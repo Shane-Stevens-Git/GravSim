@@ -22,7 +22,7 @@ from physics import circular_speed, corotating_velocity, lagrange_points  # noqa
 
 SAVE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saves")
 QUICKSAVE = os.path.join(SAVE_DIR, "quicksave.json")
-CENTER = pygame.Vector2(WIDTH / 2, HEIGHT / 2)
+CENTER = pygame.Vector2(WIDTH / 2, HEIGHT / 2)    # world point scenes are built around
 
 YELLOW = (255, 200, 60)
 ROCK = (160, 160, 160)

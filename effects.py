@@ -18,7 +18,7 @@ class Starfield:
         rng = np.random.default_rng(seed)
         self.layers = []
         for factor, n, lo, hi in self.LAYERS:
-            xy = rng.uniform(0, 1, (n, 2)) * (WIDTH, HEIGHT)
+            xy = rng.uniform(0, 1, (n, 2)) * (WIDTH, HEIGHT)    # one tile; repeated to fill
             bright = rng.uniform(lo, hi, n)
             tint = rng.choice([0, 1, 2], n, p=[0.7, 0.15, 0.15])   # white / blue / warm
             col = np.stack([bright, bright, bright], axis=1)
@@ -28,17 +28,23 @@ class Starfield:
 
     def draw(self, surface, view):
         surface.fill(BG_COLOR)
+        w, h = surface.get_size()
         px = pygame.surfarray.pixels3d(surface)
         t = pygame.time.get_ticks() / 1000
         for k, (factor, xy, col, phase) in enumerate(self.layers):
-            sx = ((xy[:, 0] - view.center.x * factor) % WIDTH).astype(int)
-            sy = ((xy[:, 1] - view.center.y * factor) % HEIGHT).astype(int)
+            bx = (xy[:, 0] - view.center.x * factor) % WIDTH
+            by = (xy[:, 1] - view.center.y * factor) % HEIGHT
             c = col
             if k == 2:                            # near stars twinkle a little
                 c = (col * (0.85 + 0.15 * np.sin(t * 2 + phase))[:, None]).astype(np.uint8)
-            px[sx, sy] = c
-            if k == 2:                            # and are 2 px wide
-                px[np.minimum(sx + 1, WIDTH - 1), sy] = c // 2
+            # Repeat the star tile to cover windows bigger than it
+            for ox in range(0, w, WIDTH):
+                for oy in range(0, h, HEIGHT):
+                    sx, sy = (bx + ox).astype(int), (by + oy).astype(int)
+                    ok = (sx < w - 1) & (sy < h)
+                    px[sx[ok], sy[ok]] = c[ok]
+                    if k == 2:                    # near stars are 2 px wide
+                        px[sx[ok] + 1, sy[ok]] = c[ok] // 2
         del px
 
 
