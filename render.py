@@ -21,8 +21,12 @@ def draw_points(surface, bodies, view):
         return
     pos = np.array([(b.pos.x, b.pos.y) for b in bodies], dtype=float)
     col = np.array([b.color for b in bodies], dtype=np.uint8)
-    sx = ((pos[:, 0] - view.center.x) * view.zoom + view.screen_center.x).astype(int)
-    sy = ((pos[:, 1] - view.center.y) * view.zoom + view.screen_center.y).astype(int)
+    dx, dy = pos[:, 0] - view.center.x, pos[:, 1] - view.center.y
+    if view.rot:                                   # rotating camera
+        c, s = np.cos(view.rot), np.sin(view.rot)
+        dx, dy = dx * c - dy * s, dx * s + dy * c
+    sx = (dx * view.zoom + view.screen_center.x).astype(int)
+    sy = (dy * view.zoom + view.screen_center.y).astype(int)
     w, h = surface.get_size()
     ok = (sx >= 0) & (sx < w - 1) & (sy >= 0) & (sy < h - 1)
     sx, sy, col = sx[ok], sy[ok], col[ok]

@@ -1,4 +1,5 @@
 """Bodies and the camera view (what things are and how they're drawn)."""
+import math
 from collections import deque
 
 import numpy as np
@@ -8,29 +9,43 @@ from config import *
 
 
 class View:
-    """Camera: which world point sits at the screen center, and the zoom."""
+    """Camera: which world point sits at the screen center, the zoom, and a
+    rotation (radians; non-zero only in the rotating camera mode)."""
 
     def __init__(self, size=(WIDTH, HEIGHT)):
         self.screen_center = pygame.Vector2(size[0] / 2, size[1] / 2)
         self.center = pygame.Vector2(WIDTH / 2, HEIGHT / 2)
         self.zoom = 1.0
+        self.rot = 0.0
 
     def resize(self, size):
         """Window resized: keep the same world point in the middle."""
         self.screen_center = pygame.Vector2(size[0] / 2, size[1] / 2)
 
     def to_screen(self, p):
-        return (pygame.Vector2(p) - self.center) * self.zoom + self.screen_center
+        d = pygame.Vector2(p) - self.center
+        if self.rot:
+            d = d.rotate_rad(self.rot)
+        return d * self.zoom + self.screen_center
 
     def to_world(self, s):
-        return (pygame.Vector2(s) - self.screen_center) / self.zoom + self.center
+        d = (pygame.Vector2(s) - self.screen_center) / self.zoom
+        if self.rot:
+            d = d.rotate_rad(-self.rot)
+        return d + self.center
+
+    def screen_dir_to_world(self, v):
+        """A direction/velocity drawn on screen -> world (undo the rotation)."""
+        v = pygame.Vector2(v)
+        return v.rotate_rad(-self.rot) if self.rot else v
 
     def zoom_by(self, factor, screen_pos=None):
         """Zoom, keeping the world point under screen_pos fixed on screen."""
         new = min(max(self.zoom * factor, ZOOM_RANGE[0]), ZOOM_RANGE[1])
         if screen_pos is not None:
             anchor = self.to_world(screen_pos)
-            self.center = anchor - (pygame.Vector2(screen_pos) - self.screen_center) / new
+            self.center = anchor - self.screen_dir_to_world(
+                (pygame.Vector2(screen_pos) - self.screen_center) / new)
         self.zoom = new
 
 
@@ -116,7 +131,7 @@ class Body:
         """A little arrowhead pointing along `heading`, with an engine flame
         whose length shows how hard it's thrusting."""
         size = max(8, self.radius * view.zoom * 2.2)
-        fwd = pygame.Vector2(1, 0).rotate(self.heading)
+        fwd = pygame.Vector2(1, 0).rotate(self.heading + math.degrees(view.rot))
         side = fwd.rotate(90)
         c = pygame.Vector2(cx, cy)
         a = self.thrust.length()
@@ -136,17 +151,22 @@ class Body:
         pygame.draw.polygon(surface, self.color, pts)
         pygame.draw.polygon(surface, (40, 50, 80), pts, 1)
 
-    def draw_trail(self, surface, view, offset=(0.0, 0.0)):
+    def draw_trail(self, surface, view, offset=(0.0, 0.0), frame=False):
         """Fading line through recent positions (oldest = dimmest).
-        `offset` is added to stored points (used for sun-relative trails)."""
+        `offset` is added to stored points (used for target-relative trails).
+        frame=True: points are already in the rotating camera's frame
+        (relative to its center, already rotated)."""
         n = len(self.trail)
         if n < 2:
             return
-        ox, oy = offset
         z = view.zoom
-        cx, cy = view.center
         sx, sy = view.screen_center
-        pts = [((x + ox - cx) * z + sx, (y + oy - cy) * z + sy) for x, y in self.trail]
+        if frame:
+            pts = [(x * z + sx, y * z + sy) for x, y in self.trail]
+        else:
+            ox, oy = offset
+            cx, cy = view.center
+            pts = [((x + ox - cx) * z + sx, (y + oy - cy) * z + sy) for x, y in self.trail]
         for band in range(TRAIL_BANDS):
             a = band * (n - 1) // TRAIL_BANDS
             b = (band + 1) * (n - 1) // TRAIL_BANDS + 1

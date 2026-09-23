@@ -43,8 +43,12 @@ class FieldOverlay:
         surface.blit(self.image, (0, 0))
 
     def _render(self, bodies, view):
-        wx = self.sx / view.zoom + view.center.x
-        wy = self.sy / view.zoom + view.center.y
+        ox, oy = self.sx / view.zoom, self.sy / view.zoom
+        if view.rot:                                   # rotating camera: undo rotation
+            c, s = np.cos(-view.rot), np.sin(-view.rot)
+            ox, oy = ox * c - oy * s, ox * s + oy * c
+        wx = ox + view.center.x
+        wy = oy + view.center.y
         depth = np.zeros_like(wx)
         for b in bodies:
             if b.particle:

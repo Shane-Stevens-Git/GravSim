@@ -196,12 +196,14 @@ def simulate(bodies, dt, steps, mode, events=None, rng=random):
             new_bodies = []
 
 
-def predict_path(bodies, start, vel0, frame_body=None, test_radius=0):
+def predict_path(bodies, start, vel0, frame_body=None, test_radius=0, spin=0.0):
     """Preview a throw: a massless test particle flown through the n-body
     system (the heaviest bodies move during the preview too).
 
     If frame_body is given (the body the camera follows), the path is
-    returned relative to it, so it matches what you see on screen.
+    returned relative to it, so it matches what you see on screen. `spin`
+    (rad/s) is the rotating camera's turn rate: points are rotated back by
+    spin * t so the path is drawn as seen from the rotating frame.
     """
     heavy = sorted(bodies, key=lambda b: b.mass, reverse=True)[:PREVIEW_MAX_BODIES]
     if frame_body is not None and frame_body not in heavy:
@@ -223,7 +225,12 @@ def predict_path(bodies, start, vel0, frame_body=None, test_radius=0):
         if (np.hypot(*(pos[:-1] - p).T) < radii + test_radius).any():
             break                                   # would hit something
         if k is not None:
-            p -= pos[k] - frame0
+            rel = p - pos[k]
+            if spin:
+                a = -spin * (i + 1) * PREVIEW_DT
+                c, s = math.cos(a), math.sin(a)
+                rel = np.array([rel[0] * c - rel[1] * s, rel[0] * s + rel[1] * c])
+            p = frame0 + rel
         if i % 3 == 0:
             points.append(p)
     return points

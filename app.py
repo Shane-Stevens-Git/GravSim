@@ -52,6 +52,9 @@ class App:
         self.show_trails = True
         self.show_orbits = False    # A: draw every body's predicted orbit
         self.follow = True          # camera keeps self.target centered
+        self.rotate = False         # ...and turns with a body pair (rotating frame)
+        self.rot_pair = None        # (primary, secondary) while rotating
+        self.frame_omega = 0.0      # rotating frame's turn rate (rad/s)
         self.mode = "merge"         # collision mode: "merge" or "bounce"
         self.paused = False
         self.speed_idx = DEFAULT_SPEED_IDX
@@ -142,6 +145,8 @@ class App:
         self.set_sun(bodies[sc["sun"]])
         t = sc["target"]
         self.follow = t is not None
+        self.rotate = False
+        self.rot_pair = None
         if t is not None:
             self.set_target(bodies[t])
         self.view.center = pygame.Vector2(self.target.pos if self.follow else sc["center"])
@@ -272,10 +277,59 @@ class App:
         return name, m, r, color
 
     def launch_velocity(self, mouse):
-        """Drag vector -> velocity. Measured in world pixels, so a drag means
-        the same speed at every zoom level (the arrow = ~1 s of travel)."""
+        """Drag vector -> velocity relative to the camera's frame. Measured in
+        world pixels, so a drag means the same speed at every zoom level (the
+        arrow = ~1 s of travel); un-rotated if the camera is rotating."""
         v = (pygame.Vector2(mouse) - self.drag_start) * (LAUNCH_SCALE / self.view.zoom)
-        return -v if SLINGSHOT else v
+        return self.view.screen_dir_to_world(-v if SLINGSHOT else v)
+
+    # --- Camera frames ------------------------------------------------------------------
+    @property
+    def rotating(self):
+        return self.rot_pair is not None
+
+    def rotation_pair(self):
+        """(primary, secondary) the rotating camera turns with: the Lagrange
+        pair if shown, else the followed body and what it orbits."""
+        if self.lagrange and all(b in self.bodies for b in self.lagrange):
+            return self.lagrange
+        t = self.target
+        if t not in self.bodies:
+            return None
+        primary = dominant_body(t, self.bodies)
+        if primary is not None:
+            return (primary, t)
+        others = [b for b in self.bodies if b is not t and not b.particle]
+        return (t, max(others, key=lambda b: b.mass)) if others else None
+
+    def update_camera(self):
+        pair = self.rotation_pair() if (self.follow and self.rotate) else None
+        if pair != self.rot_pair:
+            self.clear_trails()                 # trails are stored per frame
+        self.rot_pair = pair
+        if pair:
+            prim, sec = pair
+            sep, rel_v = sec.pos - prim.pos, sec.vel - prim.vel
+            self.view.center = pygame.Vector2(prim.pos)
+            # turn so the secondary always sits straight above the primary
+            self.view.rot = -math.pi / 2 - math.atan2(sep.y, sep.x)
+            self.frame_omega = (sep.x * rel_v.y - sep.y * rel_v.x) / max(sep.length_squared(), 1e-9)
+        else:
+            self.view.rot = 0.0
+            self.frame_omega = 0.0
+            if self.following:
+                self.view.center = pygame.Vector2(self.target.pos)
+
+    def frame_velocity(self, p):
+        """Velocity of the camera's frame at world point p: what 'at rest on
+        screen' means. Throws are made relative to it."""
+        if self.rotating:
+            prim = self.rot_pair[0]
+            r = p - prim.pos
+            return prim.vel + pygame.Vector2(-r.y, r.x) * self.frame_omega
+        if self.following:
+            return pygame.Vector2(self.target.vel)
+        return pygame.Vector2()
 
     def zoom(self, factor, screen_pos=None):
         # While following, the target is locked to the center, so zoom about it.
@@ -527,8 +581,13 @@ class App:
         elif k == pygame.K_m:
             modes = COLLISION_MODES
             self.mode = modes[(modes.index(self.mode) + 1) % len(modes)]
-        elif k == pygame.K_v:
-            self.follow = not self.follow
+        elif k == pygame.K_v:                   # camera: follow -> rotate -> fixed
+            if self.follow and not self.rotate:
+                self.rotate = True
+            elif self.follow:
+                self.follow = self.rotate = False
+            else:
+                self.follow = True
             self.clear_trails()                 # old trails were in the old frame
         elif k == pygame.K_g:
             self.toggle_follow_selection()
@@ -609,10 +668,9 @@ class App:
 
     def throw(self, pos):
         name, m, r, color = self.preset_body()
-        vel = self.launch_velocity(pos)
-        if self.following:                      # throw relative to the target's motion
-            vel += self.target.vel
-        body = Body(self.view.to_world(self.drag_start), m, r, color, vel=vel, name=name)
+        start = self.view.to_world(self.drag_start)
+        vel = self.launch_velocity(pos) + self.frame_velocity(start)   # relative to the frame
+        body = Body(start, m, r, color, vel=vel, name=name)
         self.bodies.append(body)
         if name == "Spacecraft":
             make_craft(body)
@@ -757,9 +815,9 @@ class App:
                     if self.select_press is not None:
                         self.select_panned = True
                     if self.follow:
-                        self.follow = False
+                        self.follow = self.rotate = False
                         self.clear_trails()
-                    self.view.center -= pygame.Vector2(event.rel) / self.view.zoom
+                    self.view.center -= self.view.screen_dir_to_world(event.rel) / self.view.zoom
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 if self.slider:
                     self.slider = None
@@ -777,8 +835,7 @@ class App:
     def update(self, frame_time):
         if self.rewinding:                      # hold Z: run the clock backwards
             self.rewind(REWIND_STEPS_PER_FRAME)
-            if self.following:
-                self.view.center = pygame.Vector2(self.target.pos)
+            self.update_camera()
             return
         advancing = not self.paused or self.step_request > 0
         if not self.paused:
@@ -814,14 +871,19 @@ class App:
                        or b.pos.distance_to(self.view.center) < cull]
         self.after_removals()
         self.n_particles = sum(1 for b in self.bodies if b.particle)
-        if self.following:
-            self.view.center = pygame.Vector2(self.target.pos)
+        self.update_camera()
 
         if self.show_trails and advancing:
             target, following = self.target, self.following
             crowded = self.crowded
             for b in self.bodies:
                 if crowded and b.particle:
+                    continue
+                if self.rotating:               # store in the rotating frame
+                    prim = self.rot_pair[0]
+                    if b is not prim:
+                        rel = (b.pos - prim.pos).rotate_rad(self.view.rot)
+                        b.trail.append((rel.x, rel.y))
                     continue
                 # While following, other trails are stored relative to the target
                 # (so orbits draw as clean loops); the target's own trail stays in
@@ -909,6 +971,9 @@ class App:
             for b in self.bodies:
                 if crowded and b.particle:
                     continue
+                if self.rotating:
+                    b.draw_trail(screen, view, frame=True)
+                    continue
                 rel = following and b is not target
                 b.draw_trail(screen, view, (target.pos.x, target.pos.y) if rel else (0.0, 0.0))
         dots = crowded and view.zoom < 2.5
@@ -934,26 +999,28 @@ class App:
         dragging = (self.drag_start is not None
                     and mouse.distance_to(self.drag_start) >= CLICK_SLOP)
         if dragging:
-            vel = self.launch_velocity(mouse)
+            vel = self.launch_velocity(mouse)            # relative to the camera frame
             start = view.to_world(self.drag_start)
-            # Readout is relative to the followed body (e.g. a moon around a planet)
-            ref = target if following else sun
+            v_world = vel + self.frame_velocity(start)
+            # Readout is relative to the followed body (e.g. a moon around a
+            # planet), or the rotating frame's primary
+            ref = self.rot_pair[0] if self.rotating else (target if following else sun)
             v_circ = orbit = None
             if ref in self.bodies:
                 v_circ = circular_speed(ref.mass, start.distance_to(ref.pos))
-                rel_vel = vel if following else vel - ref.vel
-                orbit = orbit_info(start - ref.pos, rel_vel, ref.mass, ref.radius + r)
+                orbit = orbit_info(start - ref.pos, v_world - ref.vel, ref.mass, ref.radius + r)
             status_color = hud.orbit_status(orbit)[1]
             if self.show_preview:
                 dot = [int(c * 0.6) for c in status_color]
-                v0 = vel + target.vel if following else vel
-                for p in predict_path(self.bodies, tuple(start), tuple(v0),
-                                      target if following else None, r):
+                frame_body = self.rot_pair[0] if self.rotating else (target if following else None)
+                for p in predict_path(self.bodies, tuple(start), tuple(v_world), frame_body, r,
+                                      self.frame_omega if self.rotating else 0.0):
                     q = view.to_screen((p[0], p[1]))
                     pygame.draw.circle(screen, dot, (round(q.x), round(q.y)), 1)
             Body(start, m, r, color).draw(screen, view)
+            drag = mouse - self.drag_start
             draw_arrow(screen, self.drag_start,
-                       self.drag_start + vel * (view.zoom / LAUNCH_SCALE), status_color)
+                       self.drag_start + (-drag if SLINGSHOT else drag), status_color)
             aim = (mouse, vel.length(), v_circ, orbit)
         elif self.select_tool and not hud.blocked(mouse):
             # Select tool: crosshair, and ring the body a click would pick
@@ -974,7 +1041,10 @@ class App:
 
         # --- UI ---
         hud.begin(mouse, self.slider[0] if self.slider else None)
-        cam = f"FOLLOW {target.name.upper()}"[:18] if following else "FIXED"
+        if self.rotating:
+            cam = f"ROTATE {self.rot_pair[1].name.upper()}"[:18]
+        else:
+            cam = f"FOLLOW {target.name.upper()}"[:18] if following else "FIXED"
         toggles = [
             ("M", "Collisions", self.mode.upper(), True, ("key", pygame.K_m)),
             ("L", "Trails", "ON" if self.show_trails else "OFF", self.show_trails,
