@@ -245,6 +245,7 @@ class HUD:
         ("RMB", "Cancel throw"),
         ("1-6 / click", "Choose body type"),
         ("Click body", "Select / inspect it"),
+        ("Q", "Select tool (no throwing)"),
         ("Arrows", "Fly selected craft (Manual)"),
         ("Scroll", "Resize (keeps density)"),
         ("Shift+Scroll", "Change mass only"),
@@ -283,7 +284,7 @@ class HUD:
             surface.blit(label, (rect.x + 42, rect.y + 8))
             self.add(rect, ("key", pygame.K_h))
             return rect
-        row_h, key_w = 24, 100
+        row_h, key_w = 22, 100
         rect = self.panel(surface, (self.w - PAD - 280, PAD, 280, 50 + row_h * len(self.CONTROLS)))
         x, y = rect.x + 14, rect.y + 12
         self.text(surface, self.f_title, "CONTROLS", ACCENT, (x, y))
@@ -451,14 +452,30 @@ class HUD:
 
     # --- Body toolbar (bottom-center) -------------------------------------------------
     def draw_toolbar(self, surface, presets, selected_idx, radius, mass, size_mult, mass_mult,
-                     size_range, mass_range):
+                     size_range, mass_range, select_on=False):
         card_w, card_h, gap, info_w = 92, 80, 8, 230
-        total = len(presets) * (card_w + gap) + info_w
+        total = (len(presets) + 1) * (card_w + gap) + info_w
         x = (self.w - total) // 2
         y = self.h - PAD - card_h
 
+        # Select tool card: clicks pick bodies, never create them
+        hov = self.hovered((x, y, card_w, card_h))
+        rect = self.panel(surface, (x, y, card_w, card_h),
+                          bg=PANEL_BG_HI if (select_on or hov) else PANEL_BG,
+                          border=ACCENT if select_on else (KEY_BORDER if hov else PANEL_BORDER),
+                          width=2 if select_on else 1)
+        self.keycap(surface, "Q", (rect.x + 6, rect.y + 6))
+        cx, cy = rect.centerx - 4, rect.y + 24                  # mouse-pointer icon
+        pygame.draw.polygon(surface, ACCENT if select_on else TEXT,
+                            [(cx, cy), (cx, cy + 20), (cx + 5, cy + 15), (cx + 9, cy + 23),
+                             (cx + 12, cy + 21), (cx + 8, cy + 14), (cx + 14, cy + 14)])
+        self.text(surface, self.f_label, "Select", TEXT if (select_on or hov) else DIM,
+                  (rect.centerx, rect.bottom - 8), "midbottom")
+        self.add(rect, ("select_tool", None))
+        x += card_w + gap
+
         for i, (name, _m, r, color) in enumerate(presets):
-            sel = i == selected_idx
+            sel = i == selected_idx and not select_on
             hov = self.hovered((x, y, card_w, card_h))
             rect = self.panel(surface, (x, y, card_w, card_h),
                               bg=PANEL_BG_HI if (sel or hov) else PANEL_BG,
@@ -476,9 +493,14 @@ class HUD:
             self.add(rect, ("preset", i))
             x += card_w + gap
 
-        name, _m, _r, color = presets[selected_idx]
         rect = self.panel(surface, (x, y, info_w, card_h))
         ix, iy = rect.x + 14, rect.y + 9
+        if select_on:
+            self.text(surface, self.f_title, "Select tool", ACCENT, (ix, iy))
+            self.text(surface, self.f_label, "Click near a body to select it", DIM, (ix, iy + 24))
+            self.text(surface, self.f_label, "Drag to pan  -  1-6 to throw again", DIM, (ix, iy + 44))
+            return
+        name, _m, _r, color = presets[selected_idx]
         self.text(surface, self.f_title, name, color, (ix, iy))
         rows = (("Radius", f"{radius}", size_mult, size_range),
                 ("Mass", f"{mass:.4g}", mass_mult, mass_range))

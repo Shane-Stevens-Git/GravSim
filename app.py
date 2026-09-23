@@ -61,6 +61,9 @@ class App:
         self.events = []            # collisions this frame: (kind, pos, strength)
         self.keys_held = set()      # arrow keys held (manual spacecraft piloting)
         self.pick = None            # (craft, mode) while waiting for a target click
+        self.select_tool = False    # Q: clicks select (nearest body), drags pan
+        self.select_press = None    # mouse-down position while using the select tool
+        self.select_panned = False
         self.history = History()    # rewind buffer
         self.rewinding = False      # Z held
         self.orbit_tool = False     # O: a click places a body on a circular orbit
@@ -220,6 +223,7 @@ class App:
             self.set_target(self.sun)
 
     def select_preset(self, i):
+        self.select_tool = False
         self.preset_idx = i
         self.size_mult = self.mass_mult = 1.0
 
@@ -266,6 +270,21 @@ class App:
             d = p.distance_to(screen_pos)
             if d <= reach and (best_d is None or d < best_d):
                 best, best_d = b, d
+        return best
+
+    def nearest_body(self, screen_pos, radius=SELECT_RADIUS):
+        """Forgiving pick: the body whose edge is nearest the click, within
+        `radius` screen px. Regular bodies win over particles (dust, debris)."""
+        best, best_key = None, None
+        crowded = self.crowded
+        for b in self.bodies:
+            if crowded and b.particle:
+                continue
+            gap = self.view.to_screen(b.pos).distance_to(screen_pos) - b.radius * self.view.zoom
+            if gap <= radius:
+                key = (b.particle, max(gap, 0))
+                if best_key is None or key < best_key:
+                    best, best_key = b, key
         return best
 
     # --- Selection -----------------------------------------------------------------
@@ -339,7 +358,7 @@ class App:
         """Second click of Transfer/Follow: choose the target body."""
         craft, mode = self.pick
         self.pick = None
-        hit = self.body_at(pos)
+        hit = self.nearest_body(pos)
         if hit is None or hit is craft:
             craft.pilot.status = "Autopilot " + craft.pilot.mode
             self.notify("Target selection cancelled")
@@ -418,6 +437,8 @@ class App:
             self.notify(f"Scene: {self.start_scenario(k - pygame.K_1)}")
         elif k == pygame.K_k:
             self.toggle_lagrange()
+        elif k == pygame.K_q:
+            self.select_tool = not self.select_tool
         elif k == pygame.K_z:
             self.rewinding = True
         elif k == pygame.K_o:
@@ -514,6 +535,8 @@ class App:
                 self.remove_body(self.selection)
         elif kind == "sel_mass":
             self.scale_selection_mass(arg)
+        elif kind == "select_tool":
+            self.select_tool = not self.select_tool
         elif kind == "pilot":
             self.set_pilot_mode(arg)
         elif kind == "sel_ring":
@@ -644,13 +667,22 @@ class App:
                     if hit:
                         self.handle_action(*hit, event.pos)
                     elif not self.hud.blocked(event.pos):
-                        self.drag_start = pygame.Vector2(event.pos)
+                        if self.select_tool:
+                            self.select_press = pygame.Vector2(event.pos)
+                            self.select_panned = False
+                        else:
+                            self.drag_start = pygame.Vector2(event.pos)
                 elif event.button == 3:
                     self.drag_start = None
             elif event.type == pygame.MOUSEMOTION:
                 if self.slider:
                     self.update_slider(event.pos)
-                elif event.buttons[1]:          # middle-drag pans the view
+                elif (event.buttons[1] or (self.select_press is not None and event.buttons[0]
+                                           and (self.select_panned or pygame.Vector2(event.pos)
+                                                .distance_to(self.select_press) >= CLICK_SLOP))):
+                    # middle-drag (or a drag with the select tool) pans the view
+                    if self.select_press is not None:
+                        self.select_panned = True
                     if self.follow:
                         self.follow = False
                         self.clear_trails()
@@ -658,6 +690,13 @@ class App:
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 if self.slider:
                     self.slider = None
+                elif self.select_press is not None:
+                    if not self.select_panned:
+                        if self.pick:
+                            self.pick_target(event.pos)
+                        else:
+                            self.selection = self.nearest_body(event.pos)
+                    self.select_press = None
                 elif self.drag_start is not None:
                     self.release(event.pos)
 
@@ -818,6 +857,15 @@ class App:
             draw_arrow(screen, self.drag_start,
                        self.drag_start + vel * (view.zoom / LAUNCH_SCALE), status_color)
             aim = (mouse, vel.length(), v_circ, orbit)
+        elif self.select_tool and not hud.blocked(mouse):
+            # Select tool: crosshair, and ring the body a click would pick
+            pygame.draw.line(screen, ui.DIM, (mouse.x - 6, mouse.y), (mouse.x + 6, mouse.y))
+            pygame.draw.line(screen, ui.DIM, (mouse.x, mouse.y - 6), (mouse.x, mouse.y + 6))
+            cand = self.nearest_body(mouse)
+            if cand is not None and cand is not self.selection:
+                p = view.to_screen(cand.pos)
+                pygame.draw.circle(screen, [int(c * 0.7) for c in ui.ACCENT], (round(p.x), round(p.y)),
+                                   round(max(cand.radius * view.zoom, 4) + 7), 1)
         elif self.drag_start is None and not hud.blocked(mouse):
             if self.body_at(mouse) is not None:         # hint: this body is clickable
                 pygame.draw.circle(screen, ui.DIM, mouse, 3)
@@ -870,7 +918,7 @@ class App:
         if inspector is not None:
             hud.draw_inspector(screen, controls.bottom + 10, inspector)
         hud.draw_toolbar(screen, PRESETS, self.preset_idx, r, m, self.size_mult,
-                         self.mass_mult, SIZE_RANGE, MASS_RANGE)
+                         self.mass_mult, SIZE_RANGE, MASS_RANGE, self.select_tool)
         if hud.scenes_open:
             hud.draw_scenes(screen, [(n, d) for n, d, _ in SCENARIOS], self.scenario_idx)
         if self.rewinding:

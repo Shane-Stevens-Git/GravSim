@@ -21,6 +21,7 @@ python main.py
 | **Shift + scroll** | Mass of next body only (denser / lighter) |
 | **Left-drag, release** | Throw: press where it starts, drag the way it should go |
 | **Right-click** | Cancel a throw |
+| **Q** or the Select card | Select tool: clicks pick the nearest body (within ~30 px) and never create one; drag to pan. 1-6 switches back to throwing |
 | **Arrow keys** | Fly the selected spacecraft in Manual mode (Up thrust, Down brake, Left/Right turn) |
 | **Click a body** | Select it: inspector shows its orbit (period, eccentricity, peri/apoapsis) and draws the predicted ellipse |
 | **G** | Camera follows the selected body (again: back to the sun) |

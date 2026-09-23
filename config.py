@@ -22,6 +22,7 @@ COLLISION_MODES = ("merge", "shatter", "bounce")   # M cycles through these
 RESTITUTION = 0.8           # bounciness in bounce mode (1 = perfectly elastic)
 
 # --- Launch controls -----------------------------------------------------------
+SELECT_RADIUS = 30          # px; the Select tool picks the nearest body within this
 CLICK_SLOP = 5               # px; a press+release shorter than this is a click, not a throw
 LAUNCH_SCALE = 1.0          # launch speed (px/s) per pixel dragged
 SLINGSHOT = False           # False: drag the way it should go. True: pull back like a slingshot.
