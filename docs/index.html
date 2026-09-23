@@ -213,18 +213,6 @@ td:first-child { width: 34%; white-space: nowrap; }
 td:last-child { color: #c2c9dc; }
 @media (max-width: 620px) { td:first-child { white-space: normal; width: 42%; } td { padding: 10px 12px; } }
 
-/* faq */
-details { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 0 20px; margin-bottom: 10px; }
-summary { cursor: pointer; list-style: none; padding: 16px 0; font-weight: 600; display: flex; justify-content: space-between; gap: 12px; }
-summary::-webkit-details-marker { display: none; }
-summary::after { content: "+"; color: var(--accent); font-size: 20px; line-height: 1; transition: transform .2s; }
-details[open] summary::after { transform: rotate(45deg); }
-details p { margin: 0 0 16px; color: var(--dim); font-size: 15px; }
-
-/* final cta */
-.final { text-align: center; }
-.final .box { padding: 48px 28px; background: radial-gradient(ellipse at top, rgba(120,170,255,.12), transparent 70%), var(--panel); }
-
 footer { border-top: 1px solid var(--border); padding: 28px 0 40px; color: var(--dim); font-size: 14px; }
 footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 </style>
@@ -242,7 +230,6 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
       <li><a href="#gallery">Screenshots</a></li>
       <li><a href="#install">Install</a></li>
       <li><a href="#controls">Controls</a></li>
-      <li><a href="#faq">FAQ</a></li>
       <li><a href="https://github.com/Shane-Stevens-Git/GravSim">GitHub</a></li>
     </ul>
     <a class="btn btn-primary nav-dl" href="https://github.com/Shane-Stevens-Git/GravSim/releases/latest/download/GravSim.exe">Download</a>
@@ -260,9 +247,12 @@ footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wr
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 19h16"/></svg>
         Download for Windows
       </a>
-      <a class="btn btn-ghost" href="#install">Mac &amp; Linux</a>
+      <a class="btn btn-ghost" href="https://github.com/Shane-Stevens-Git/GravSim">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.82 1.19 3.08 0 4.41-2.69 5.38-5.26 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
+        View on GitHub
+      </a>
     </div>
-    <div class="meta"><span>GravSim.exe</span><span>Windows 10 &amp; 11 (64-bit)</span><span>Nothing to install</span></div>
+    <div class="meta"><span>GravSim.exe</span><span>Windows 10 &amp; 11 (64-bit)</span><span>Nothing to install</span><span><a href="#install">Mac &amp; Linux</a></span></div>
     <div class="shot-hero"><img src="img/orbits.webp" width="1280" height="800" alt="GravSim showing the inner solar system with every planet's predicted orbit drawn in its own color"></div>
   </div>
 </header>
@@ -496,39 +486,6 @@ python main.py</code></pre>
       <tr><td><kbd>F5</kbd> / <kbd>F9</kbd></td><td>Quick save / quick load</td></tr>
       <tr><td>Where</td><td>A <code>saves</code> folder next to the app. Scene files are plain JSON and can be shared</td></tr>
     </table></div>
-  </div>
-</section>
-
-<!-- ============ FAQ ============ -->
-<section id="faq">
-  <div class="wrap" style="max-width:820px">
-    <div class="label">FAQ</div>
-    <h2>Questions</h2>
-    <p class="sub"></p>
-    <details><summary>Is it free?</summary><p>Yes. GravSim is a hobby project, and the source code is on GitHub.</p></details>
-    <details><summary>Why does Windows warn me when I open it?</summary><p>Windows SmartScreen warns about any app that isn't code-signed with a paid certificate. Click <b>More info</b>, then <b>Run anyway</b>. If you'd rather not, you can read the source and run it with Python, or build the .exe yourself with <code>build_exe.bat</code>.</p></details>
-    <details><summary>Does it work on Mac or Linux?</summary><p>There's no prebuilt app for those yet, but it runs from source on both. See <a href="#install">Install</a>: it's four commands.</p></details>
-    <details><summary>How realistic is the physics?</summary><p>Gravity is real Newtonian inverse-square attraction between every pair of bodies, integrated with velocity Verlet. That's the same method many astronomy codes use. Distances and masses are in "screen units" instead of kilometers, so it's to scale with itself but not with the real solar system.</p></details>
-    <details><summary>Why did my planet fly away?</summary><p>It was thrown faster than escape speed, which is about 1.4× the circular-orbit speed shown in the HUD. Hold <kbd>Z</kbd> to rewind and try a gentler throw, or use the Orbit tool (<kbd>O</kbd>) for a perfect circle.</p></details>
-    <details><summary>It's slow with lots of bodies. What can I do?</summary><p>Bodies you throw all pull on each other, so the cost grows fast. Particles (belts, rings, galaxy stars) only feel gravity and don't pull back, which is why thousands of them still run smoothly. In the Physics tab you can also lower the physics rate.</p></details>
-    <details><summary>Does it need the internet?</summary><p>No. Everything, including the sounds, is generated on your computer.</p></details>
-    <details><summary>How do I uninstall it?</summary><p>Delete <code>GravSim.exe</code> and the <code>saves</code> folder next to it. It doesn't install anything else.</p></details>
-  </div>
-</section>
-
-<section class="final" style="padding-top:0">
-  <div class="wrap">
-    <div class="box">
-      <h2>Ready to make some orbits?</h2>
-      <p class="sub" style="margin:0 auto 28px">One file, no setup. Free.</p>
-      <div class="cta">
-        <a class="btn btn-primary" href="https://github.com/Shane-Stevens-Git/GravSim/releases/latest/download/GravSim.exe">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 19h16"/></svg>
-          Download for Windows
-        </a>
-        <a class="btn btn-ghost" href="https://github.com/Shane-Stevens-Git/GravSim">View on GitHub</a>
-      </div>
-    </div>
   </div>
 </section>
 
