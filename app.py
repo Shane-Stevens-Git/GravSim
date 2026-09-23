@@ -1,5 +1,6 @@
 """The GravSim application: state, input handling and drawing."""
 import math
+import os
 from collections import deque
 
 import pygame
@@ -10,7 +11,8 @@ from config import *
 from physics import (circular_speed, dominant_body, orbit_info, orbit_points,
                      orbital_elements, predict_path, simulate)
 from render import draw_arrow, make_starfield
-from scenes import make_scene
+from scenes import (QUICKSAVE, SCENARIOS, ask_path, lagrange_points, load_file,
+                    save_file, to_dict)
 
 
 class App:
@@ -40,8 +42,12 @@ class App:
         self.running = True
         self.accumulator = 0.0
         self.sim_time = 0.0
-        _name, *cfg = SUN_TYPES[DEFAULT_SUN]
-        self.reset(tuple(cfg), fixed=False)
+        self.lagrange = None        # (primary, secondary) whose L-points are marked
+        self.show_lagrange = False
+        self.toast = None           # (text, expiry in ms)
+        self.scenario_idx = 0
+        self.reset_source = ("scenario", 0)
+        self.start_scenario(0)
 
     # --- State helpers -----------------------------------------------------------
     @property
@@ -62,18 +68,107 @@ class App:
             self.target = body
             self.clear_trails()
 
-    def reset(self, sun_cfg=None, fixed=None):
-        """Restart the scene, keeping the current sun settings by default."""
-        if sun_cfg is None:
-            sun_cfg = (self.sun.mass, self.sun.radius, self.sun.color, self.sun.kind)
-        if fixed is None:
-            fixed = self.sun.fixed
-        self.bodies = make_scene(sun_cfg, fixed)
-        self.target = None
+    # --- Scenes ---------------------------------------------------------------------
+    def load_scene(self, sc):
+        """Install a scene dict (see scenes.py)."""
+        bodies = sc["bodies"]
+        self.bodies = bodies
         self.selection = None
-        self.set_sun(self.bodies[0])
-        self.view.center = pygame.Vector2(self.sun.pos)
-        self.sim_time = 0.0
+        self.sun = self.target = None
+        self.set_sun(bodies[sc["sun"]])
+        t = sc["target"]
+        self.follow = t is not None
+        if t is not None:
+            self.set_target(bodies[t])
+        self.view.center = pygame.Vector2(self.target.pos if self.follow else sc["center"])
+        self.view.zoom = sc["zoom"]
+        lg = sc.get("lagrange")
+        self.lagrange = (bodies[lg[0]], bodies[lg[1]]) if lg else None
+        self.show_lagrange = self.lagrange is not None
+        self.mode = sc["mode"]
+        self.sim_time = sc.get("sim_time", 0.0)
+        self.accumulator = 0.0
+        self.clear_trails()
+
+    def sun_settings(self):
+        """(mass, radius, color, kind) and pinned state of the current sun, so
+        scenarios rebuilt with R or picked from the menu keep sun-panel edits."""
+        sun = getattr(self, "sun", None)
+        if sun is None or sun.name != "Sun":
+            _name, *cfg = SUN_TYPES[DEFAULT_SUN]
+            return tuple(cfg), False
+        return (sun.mass, sun.radius, sun.color, sun.kind), sun.fixed
+
+    def start_scenario(self, i):
+        cfg, fixed = self.sun_settings()
+        name, _desc, build = SCENARIOS[i]
+        self.load_scene(build(cfg, fixed))
+        self.scenario_idx = i
+        self.reset_source = ("scenario", i)
+        self.hud.scenes_open = False
+        return name
+
+    def reset(self):
+        """R: rebuild the current scenario, or reload the last loaded file."""
+        kind, arg = self.reset_source
+        if kind == "file":
+            self.load_scene_file(arg, quiet=True)
+        else:
+            self.start_scenario(arg)
+
+    def current_scene(self):
+        return {"bodies": self.bodies, "sun": self.sun,
+                "target": self.target if self.following else None,
+                "center": self.view.center, "zoom": self.view.zoom,
+                "lagrange": ([self.bodies.index(b) for b in self.lagrange]
+                             if self.lagrange else None),
+                "mode": self.mode}
+
+    def save_scene(self, path=None):
+        path = path or ask_path(save=True)
+        if not path:
+            return
+        try:
+            save_file(to_dict(self.current_scene(), {"sim_time": self.sim_time}), path)
+            self.notify(f"Saved {os.path.basename(path)}")
+        except OSError as e:
+            self.notify(f"Couldn't save: {e.strerror or e}")
+
+    def load_scene_file(self, path=None, quiet=False):
+        path = path or ask_path(save=False)
+        if not path:
+            return
+        try:
+            self.load_scene(load_file(path))
+        except (OSError, ValueError, KeyError, IndexError, TypeError) as e:
+            self.notify(f"Couldn't load {os.path.basename(path)}: {e}")
+            return
+        self.reset_source = ("file", path)
+        self.scenario_idx = None
+        self.hud.scenes_open = False
+        if not quiet:
+            self.notify(f"Loaded {os.path.basename(path)}")
+
+    def notify(self, text, ms=2500):
+        self.toast = (text, pygame.time.get_ticks() + ms)
+
+    def toggle_lagrange(self):
+        """K: show L1-L5 for the selected body and what it orbits (or the
+        scene's pair / the sun and the heaviest other body)."""
+        if self.show_lagrange:
+            self.show_lagrange = False
+            return
+        sel = self.selection
+        primary = dominant_body(sel, self.bodies) if sel is not None else None
+        if primary is not None:
+            self.lagrange = (primary, sel)
+        elif self.lagrange is None or any(b not in self.bodies for b in self.lagrange):
+            others = [b for b in self.bodies if b is not self.sun]
+            self.lagrange = ((self.sun, max(others, key=lambda b: b.mass))
+                             if others and self.sun in self.bodies else None)
+        self.show_lagrange = self.lagrange is not None
+        if not self.show_lagrange:
+            self.notify("Lagrange points need two bodies")
 
     def clear_trails(self):
         for b in getattr(self, "bodies", []):
@@ -87,6 +182,8 @@ class App:
         """Fix up references after bodies merged, were culled or deleted."""
         if self.selection not in self.bodies:
             self.selection = None
+        if self.lagrange and any(b not in self.bodies for b in self.lagrange):
+            self.lagrange, self.show_lagrange = None, False
         if self.sun not in self.bodies and self.bodies:   # sun swallowed or flung away
             self.set_sun(max(self.bodies, key=lambda b: b.mass))
         if self.target not in self.bodies and self.sun in self.bodies:
@@ -207,8 +304,29 @@ class App:
 
     # --- Input ---------------------------------------------------------------------
     def handle_key(self, k):
-        if k == pygame.K_ESCAPE:
-            self.running = False
+        ctrl = pygame.key.get_mods() & pygame.KMOD_CTRL
+        if ctrl and k == pygame.K_s:
+            self.save_scene()
+        elif ctrl and k == pygame.K_o:
+            self.load_scene_file()
+        elif k == pygame.K_F5:
+            self.save_scene(QUICKSAVE)
+        elif k == pygame.K_F9:
+            if os.path.exists(QUICKSAVE):
+                self.load_scene_file(QUICKSAVE)
+            else:
+                self.notify("No quicksave yet (F5 to make one)")
+        elif k == pygame.K_ESCAPE:
+            if self.hud.scenes_open:
+                self.hud.scenes_open = False
+            else:
+                self.running = False
+        elif k == pygame.K_p:
+            self.hud.scenes_open = not self.hud.scenes_open
+        elif self.hud.scenes_open and pygame.K_1 <= k < pygame.K_1 + len(SCENARIOS):
+            self.notify(f"Scene: {self.start_scenario(k - pygame.K_1)}")
+        elif k == pygame.K_k:
+            self.toggle_lagrange()
         elif k == pygame.K_SPACE:
             self.paused = not self.paused
         elif k == pygame.K_n:                   # step one frame (pauses first)
@@ -288,6 +406,12 @@ class App:
                 self.remove_body(self.selection)
         elif kind == "sel_mass":
             self.scale_selection_mass(arg)
+        elif kind == "scene":
+            self.notify(f"Scene: {self.start_scenario(arg)}")
+        elif kind == "save":
+            self.save_scene()
+        elif kind == "load":
+            self.load_scene_file()
 
     def throw(self, pos):
         name, m, r, color = self.preset_body()
@@ -417,6 +541,9 @@ class App:
                 b.draw_trail(screen, view, (target.pos.x, target.pos.y) if rel else (0.0, 0.0))
         for b in self.bodies:
             b.draw(screen, view)
+        if self.show_lagrange and self.lagrange:
+            pts = lagrange_points(*self.lagrange)
+            hud.draw_lagrange(screen, {k: view.to_screen(p) for k, p in pts.items()})
 
         inspector = None
         if self.selection is not None:
@@ -467,6 +594,10 @@ class App:
             ("V", "Camera", cam, following, ("key", pygame.K_v)),
             ("0", "Zoom", f"{view.zoom:.2f}x", abs(view.zoom - 1) > 1e-6, ("key", pygame.K_0)),
             ("< >", "Speed", f"{self.speed:g}x", self.speed != 1, ("speed", None)),
+            ("K", "Lagrange pts", "ON" if self.show_lagrange else "OFF", self.show_lagrange,
+             ("key", pygame.K_k)),
+            ("P", "Scene", (SCENARIOS[self.scenario_idx][0] if self.scenario_idx is not None
+                            else "FROM FILE").upper()[:17], True, ("key", pygame.K_p)),
         ]
         status = hud.draw_status(screen, self.clock.get_fps(), len(self.bodies),
                                  self.sim_time, toggles)
@@ -484,8 +615,12 @@ class App:
             hud.draw_inspector(screen, controls.bottom + 10, inspector)
         hud.draw_toolbar(screen, PRESETS, self.preset_idx, r, m, self.size_mult,
                          self.mass_mult, SIZE_RANGE, MASS_RANGE)
+        if hud.scenes_open:
+            hud.draw_scenes(screen, [(n, d) for n, d, _ in SCENARIOS], self.scenario_idx)
         if self.paused:
             hud.draw_paused(screen)
+        if self.toast and pygame.time.get_ticks() < self.toast[1]:
+            hud.draw_toast(screen, self.toast[0])
         if aim:                                   # on top of everything else
             hud.draw_aim(screen, *aim)
         pygame.display.flip()

@@ -44,6 +44,7 @@ class HUD:
         self.f_big = pygame.font.SysFont(mono, 22, bold=True)
         self.show_help = True
         self.sun_collapsed = False
+        self.scenes_open = False
         self._panel_cache = {}
         self.regions = []       # (hit rect, action, reference rect)
         self.blockers = []      # panel rects that swallow clicks
@@ -248,6 +249,10 @@ class HUD:
         ("Ctrl+Scroll", "Zoom (also + / -)"),
         ("Middle-drag", "Pan the view"),
         ("S", "Sun panel"),
+        ("P", "Scenes menu"),
+        ("K", "Lagrange points"),
+        ("Ctrl+S / O", "Save / load scene"),
+        ("F5 / F9", "Quick save / load"),
         ("Space", "Pause / resume"),
         ("N", "Step one frame"),
         (", / .", "Slower / faster"),
@@ -345,6 +350,58 @@ class HUD:
                     ("sel_follow", None), key="G", on=info["following"])
         self.button(surface, (x + bw + 10, ty, bw, 28), "Delete", ("sel_delete", None), key="Del")
         return rect
+
+    # --- Scenes menu (modal) -------------------------------------------------------------
+    def draw_scenes(self, surface, scenarios, current_idx):
+        """scenarios: list of (name, description). Rows click to ('scene', i)."""
+        # Dim the whole screen; clicking outside the menu closes it.
+        full = pygame.Rect(0, 0, self.w, self.h)
+        self.panel(surface, full, bg=(0, 0, 0, 140), border=None, radius=0)
+        self.add(full, ("key", pygame.K_p))
+        row_h, w = 54, 560
+        h = 58 + row_h * len(scenarios) + 60
+        rect = self.panel(surface, ((self.w - w) // 2, (self.h - h) // 2, w, h), bg=(14, 18, 32, 250))
+        self.add(rect, ("noop", None))                  # clicks inside don't close it
+        x, y = rect.x + 18, rect.y + 16
+        self.text(surface, self.f_title, "SCENES", ACCENT, (x, y))
+        hint = self.text(surface, self.f_label, "close", DIM, (rect.right - 18, y + 1), "topright")
+        cap = self.keycap(surface, "P", (hint.x - 26, y))
+        self.add(cap.union(hint).inflate(8, 8), ("key", pygame.K_p))
+        y += 36
+        for i, (name, desc) in enumerate(scenarios):
+            row = pygame.Rect(rect.x + 8, y, w - 16, row_h - 4)
+            cur = i == current_idx
+            if self.hovered(row) or cur:
+                pygame.draw.rect(surface, HOVER_BG, row, border_radius=8)
+            if cur:
+                pygame.draw.rect(surface, ACCENT, row, 1, border_radius=8)
+            self.keycap(surface, str(i + 1), (x, y + 15))
+            self.text(surface, self.f_title, name, TEXT, (x + 34, y + 6))
+            self.text(surface, self.f_label, desc, DIM, (x + 34, y + 26))
+            if cur:
+                self.text(surface, self.f_small, "LOADED", ACCENT, (row.right - 12, y + 8), "topright")
+            self.add(row, ("scene", i))
+            y += row_h
+        y += 8
+        bw = (w - 36 - 12) // 2
+        self.button(surface, (x, y, bw, 32), "Save scene...", ("save", None), key="Ctrl+S")
+        self.button(surface, (x + bw + 12, y, bw, 32), "Load scene...", ("load", None), key="Ctrl+O")
+        return rect
+
+    def draw_toast(self, surface, text):
+        img = self.f_label.render(text, True, TEXT)
+        w = img.get_width() + 32
+        rect = self.panel(surface, ((self.w - w) // 2, self.h - PAD - 80 - 12 - 34, w, 34),
+                          border=ACCENT, block=False)
+        surface.blit(img, img.get_rect(center=rect.center))
+
+    def draw_lagrange(self, surface, points):
+        """points: {label: screen Vector2}. Small diamonds with labels."""
+        for label, p in points.items():
+            x, y = round(p.x), round(p.y)
+            color = GOOD if label in ("L4", "L5") else WARN      # stable vs unstable
+            pygame.draw.polygon(surface, color, [(x, y - 6), (x + 6, y), (x, y + 6), (x - 6, y)], 1)
+            self.text(surface, self.f_small, label, color, (x + 9, y - 16))
 
     # --- Body toolbar (bottom-center) -------------------------------------------------
     def draw_toolbar(self, surface, presets, selected_idx, radius, mass, size_mult, mass_mult,

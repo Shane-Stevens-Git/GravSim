@@ -35,7 +35,7 @@ class Body:
     _glow_cache = {}
 
     def __init__(self, pos, mass, radius, color, vel=(0, 0), fixed=False, kind="body",
-                 name="Body"):
+                 name="Body", particle=False):
         self.pos = pygame.Vector2(pos)
         self.vel = pygame.Vector2(vel)
         self.mass = float(mass)
@@ -44,7 +44,10 @@ class Body:
         self.fixed = fixed  # fixed ("pinned") bodies pull on others but never move
         self.kind = kind    # "body", "star" or "blackhole" (affects drawing only)
         self.name = name    # shown in the inspector
-        self.trail = deque(maxlen=TRAIL_LENGTH)
+        # A "test particle" (belt asteroid, galaxy star) feels gravity but exerts
+        # none, and never collides with other particles - see physics.accelerations.
+        self.particle = particle
+        self.trail = deque(maxlen=PARTICLE_TRAIL_LENGTH if particle else TRAIL_LENGTH)
 
     @property
     def accent(self):

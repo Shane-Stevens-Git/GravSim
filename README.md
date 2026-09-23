@@ -28,12 +28,33 @@ python main.py
 | **Middle-drag** | Pan the view (switches the camera to fixed) |
 | **M / L / T / V** | Collisions merge/bounce, trails, aim preview, camera follow (or click the rows) |
 | **S** | Show / hide the sun panel |
+| **P** | Scenes menu (then 1-6 or click to load a preset) |
+| **K** | Show Lagrange points L1-L5 (for the selected body and what it orbits) |
+| **Ctrl+S** / **Ctrl+O** | Save / load a scene file (saved in `saves/`) |
+| **F5** / **F9** | Quick save / quick load |
 | **F** | Pin / unpin the sun |
 | **H** | Show / hide the controls panel |
 | **C** / **R** | Clear thrown bodies / reset scene |
 | **Space** / **N** | Pause / step one frame |
 | **,** / **.** | Slower / faster (0.25x to 8x, or click the Speed row) |
 | **Esc** | Quit |
+
+### Scenes
+
+| Scene | What to watch |
+|---|---|
+| Sun & planet | The default elliptical orbit. |
+| Inner solar system | Four planets; select Earth and press G to watch its moon. |
+| Binary star | A planet on a stable orbit around *both* stars. |
+| Figure-eight | Three equal stars sharing one figure-8 path. Marginally stable - it eventually breaks up. |
+| Asteroid belt | 300 test-particle asteroids; the giant's 2:1 resonance stirs up the middle of the belt (try 8x). |
+| Lagrange points | Asteroids at L1-L5. L4/L5 (green) hold them in tadpole loops; L1-L3 (amber) let them drift. Follow the giant (click it, G) to see the tadpoles. |
+
+**Test particles:** belt asteroids and Lagrange asteroids feel gravity but
+exert none and never collide with each other (like real asteroids, whose pull
+on each other is negligible). This also makes hundreds of them cheap.
+
+R restarts the current scene (or reloads the last scene file).
 
 ### Sun panel
 

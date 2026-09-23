@@ -7,13 +7,21 @@ import pygame
 from config import *
 
 
-def accelerations(pos, mass):
-    """N-body gravity: a_i = sum_j G*m_j * (p_j - p_i) / |p_j - p_i|^3."""
-    d = pos[None, :, :] - pos[:, None, :]           # d[i, j] = p_j - p_i
+def accelerations(pos, mass, sources=None):
+    """N-body gravity: a_i = sum_j G*m_j * (p_j - p_i) / |p_j - p_i|^3.
+
+    `sources` (index array) limits which bodies pull - test particles don't,
+    which turns O(n^2) into O(n * k) for k massive bodies. A body's pull on
+    itself is automatically zero because p_j - p_i = 0.
+    """
+    if sources is not None:
+        src_pos, src_mass = pos[sources], mass[sources]
+    else:
+        src_pos, src_mass = pos, mass
+    d = src_pos[None, :, :] - pos[:, None, :]       # d[i, j] = p_j - p_i
     dist_sq = (d * d).sum(axis=-1) + SOFTENING ** 2
     inv_r3 = dist_sq ** -1.5
-    np.fill_diagonal(inv_r3, 0.0)                   # no self-attraction
-    return G * (d * (mass[None, :] * inv_r3)[:, :, None]).sum(axis=1)
+    return G * (d * (src_mass[None, :] * inv_r3)[:, :, None]).sum(axis=1)
 
 
 def pack(bodies):
@@ -25,28 +33,33 @@ def pack(bodies):
     return pos, vel, mass, movable
 
 
-def verlet(pos, vel, acc, mass, movable, dt):
+def verlet(pos, vel, acc, mass, movable, dt, sources=None):
     """One velocity-Verlet step, in place. Returns the new accelerations."""
     pos += movable * (vel * dt + 0.5 * acc * dt * dt)
-    new_acc = accelerations(pos, mass)
+    new_acc = accelerations(pos, mass, sources)
     vel += movable * (0.5 * (acc + new_acc) * dt)
     return new_acc
 
 
-def find_collisions(pos, vel, radii, mode):
-    """Index pairs (i, j), i < j, of overlapping bodies.
+def find_collisions(pos, vel, radii, mode, cols=None):
+    """Sorted index pairs (i, j), i < j, of overlapping bodies.
 
+    `cols` (index array of regular bodies) restricts checks to pairs that
+    involve at least one regular body: test particles never hit each other.
     In bounce mode only pairs still moving toward each other count, so a
     pair that has already bounced isn't hit again while separating.
     """
-    d = pos[None, :, :] - pos[:, None, :]
+    if cols is None:
+        cols = np.arange(len(pos))
+    d = pos[cols][None, :, :] - pos[:, None, :]     # d[i, c] = p_cols[c] - p_i
     dist = np.hypot(d[..., 0], d[..., 1])
-    hit = dist < (radii[:, None] + radii[None, :])
+    hit = dist < (radii[:, None] + radii[cols][None, :])
     if mode == "bounce":
-        approaching = ((vel[None, :, :] - vel[:, None, :]) * d).sum(axis=-1) < 0
+        approaching = ((vel[cols][None, :, :] - vel[:, None, :]) * d).sum(axis=-1) < 0
         hit &= approaching
-    i, j = np.nonzero(np.triu(hit, k=1))
-    return list(zip(i.tolist(), j.tolist()))
+    ii, cc = np.nonzero(hit)
+    pairs = {(min(i, j), max(i, j)) for i, j in zip(ii.tolist(), cols[cc].tolist()) if i != j}
+    return sorted(pairs)
 
 
 def merge(a, b):
@@ -69,6 +82,7 @@ def merge(a, b):
     else:
         a.color = tuple(int((ca * a.mass + cb * b.mass) / m) for ca, cb in zip(a.color, b.color))
     a.radius = max(2, round((a.radius ** 3 + b.radius ** 3) ** (1 / 3)))
+    a.particle = a.particle and b.particle      # absorbing a real body makes it real
     a.mass = m
 
 
@@ -99,12 +113,14 @@ def simulate(bodies, dt, steps, mode):
     while done < steps and bodies:
         pos, vel, mass, movable = pack(bodies)
         radii = np.array([b.radius for b in bodies], dtype=float)
-        acc = accelerations(pos, mass)
+        particle = np.array([b.particle for b in bodies], dtype=bool)
+        sources = np.nonzero(~particle)[0] if particle.any() else None
+        acc = accelerations(pos, mass, sources)
         pairs = []
         while done < steps and not pairs:
-            acc = verlet(pos, vel, acc, mass, movable, dt)
+            acc = verlet(pos, vel, acc, mass, movable, dt, sources)
             done += 1
-            pairs = find_collisions(pos, vel, radii, mode)
+            pairs = find_collisions(pos, vel, radii, mode, sources)
         for b, p, v in zip(bodies, pos, vel):
             b.pos.update(p[0], p[1])
             b.vel.update(v[0], v[1])

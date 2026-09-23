@@ -13,7 +13,7 @@ MAX_FRAME_TIME = 0.05       # don't try to "catch up" more than this after a sta
 TIME_SPEEDS = [0.25, 0.5, 1, 2, 4, 8]   # simulation speed choices (, and . keys)
 DEFAULT_SPEED_IDX = 2
 MAX_STEPS_PER_FRAME = 96    # safety cap so high speeds can't freeze the app
-SOFTENING = 5.0             # px; avoids infinite force if r -> 0
+SOFTENING = 1.5             # px; avoids infinite force if r -> 0 (kept small so close orbits stay accurate)
 CULL_DISTANCE = 4000        # px from view center; farther bodies are deleted
 RESTITUTION = 0.8           # bounciness in bounce mode (1 = perfectly elastic)
 
@@ -30,6 +30,7 @@ MASS_RANGE = (0.05, 20.0)
 
 # --- Trails ------------------------------------------------------------------
 TRAIL_LENGTH = 240          # frames of history per body (4 s at 60 fps)
+PARTICLE_TRAIL_LENGTH = 45  # belts can have hundreds of particles: keep their trails short
 SUN_TRAIL_LENGTH = 900      # the sun moves slowly, so it keeps a longer trail (15 s)
 TRAIL_BANDS = 8             # fade is drawn in this many brightness bands
 
