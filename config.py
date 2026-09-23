@@ -86,7 +86,7 @@ GALAXY_CORE_SOFT = 15.0     # px softening of the galaxy cores
 PARTICLE_TRAIL_LIMIT = 400  # above this many particles, particles don't draw trails
 
 # --- Destruction (SHATTER collision mode) -----------------------------------------
-SHATTER_SPEED = 2.0         # impacts faster than this x mutual escape speed fragment
+SHATTER_ENERGY = 1.0        # impacts whose energy per mass beats this x G*M/R fragment (see physics.impact_severity)
 SHATTER_MIN_PIECES = 4
 SHATTER_MAX_PIECES = 16
 ROCHE_COEFF = 0.9           # Roche limit = k * r * (M/m)^(1/3); real fluid bodies: 2.44

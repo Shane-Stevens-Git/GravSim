@@ -357,13 +357,25 @@ def system_energy(bodies):
 
 
 # --- Destruction (SHATTER mode) ------------------------------------------------------
+def impact_severity(a, b):
+    """How destructive an impact is: the collision energy per unit of total
+    mass, Q = (1/2) * mu * v^2 / M  (mu = reduced mass), divided by the pair's
+    gravitational binding scale  G * M / (r_a + r_b)  times SHATTER_ENERGY.
+    Above 1 the impact fragments. Using energy (not just speed) means a tiny
+    spacecraft or pebble can't shatter a planet, however fast it hits."""
+    total = a.mass + b.mass
+    mu = a.mass * b.mass / total
+    q = 0.5 * mu * (a.vel - b.vel).length_squared() / total
+    q_star = SHATTER_ENERGY * G * total / (a.radius + b.radius)
+    return q / q_star
+
+
 def should_shatter(a, b):
-    """Impacts much faster than the pair's mutual escape speed fragment
-    instead of merging. Pinned bodies and test particles always just merge."""
+    """Violent enough impacts fragment instead of merging.
+    Pinned bodies and test particles always just merge."""
     if a.fixed or b.fixed or a.particle or b.particle:
         return False
-    v_esc = math.sqrt(2 * G * (a.mass + b.mass) / (a.radius + b.radius))
-    return (a.vel - b.vel).length() > SHATTER_SPEED * v_esc
+    return impact_severity(a, b) > 1
 
 
 def shatter(big, small, rng=random):
@@ -374,7 +386,7 @@ def shatter(big, small, rng=random):
     momentum = big.vel * big.mass + small.vel * small.mass
     v_cm = momentum / total
     v_esc = math.sqrt(2 * G * total / (big.radius + small.radius))
-    excess = (big.vel - small.vel).length() / (SHATTER_SPEED * v_esc)   # > 1
+    excess = math.sqrt(impact_severity(big, small))                   # > 1
     keep = min(max(1.1 - 0.35 * excess, 0.2), 0.85)     # harder hit -> smaller remnant
     color = tuple(int((ca * big.mass + cb * small.mass) / total)
                   for ca, cb in zip(big.color, small.color))
@@ -414,7 +426,10 @@ def tidal_victims(bodies):
     heavier body it orbits. Only real, reasonably sized bodies can break up."""
     out = []
     for b in bodies:
-        if b.particle or b.fixed or b.radius < ROCHE_MIN_RADIUS:
+        # Spacecraft are held together by their structure, not their own
+        # gravity, so tides can't pull them apart (their tiny mass would put
+        # the Roche limit hundreds of px out).
+        if b.particle or b.fixed or b.kind == "craft" or b.radius < ROCHE_MIN_RADIUS:
             continue
         primary = dominant_body(b, bodies)
         if (primary is not None and primary.mass > 10 * b.mass

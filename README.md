@@ -50,8 +50,9 @@ python main.py
 ### Collision modes (M)
 
 - **Merge** - bodies that touch combine; mass, momentum and volume are kept.
-- **Shatter** - like merge, but impacts faster than 2x the pair's mutual
-  escape speed fragment: the bigger body keeps a remnant (smaller for harder
+- **Shatter** - like merge, but impacts with enough energy (compared with
+  how tightly gravity binds the pair) fragment - so a pebble or spacecraft
+  can't shatter a planet, but two planets colliding fast will: the bigger body keeps a remnant (smaller for harder
   hits) and the rest sprays out as debris. Bodies that stray inside a heavier
   body's **Roche limit** are torn apart by tides into a debris stream. Try
   throwing a planet so it just grazes the sun.

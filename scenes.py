@@ -239,7 +239,7 @@ def shatter_demo(sun_cfg, sun_fixed=False):
     falls sunward and gets shredded by tides too."""
     sun = make_sun(sun_cfg, sun_fixed)
     r = 200
-    planet = orbiting(sun, r, 0, 20, 8, (90, 170, 255), "Planet", screen_ccw=True)
+    planet = orbiting(sun, r, 0, 60, 10, (90, 170, 255), "Planet", screen_ccw=True)
     giant = orbiting(sun, r, 180, 200, 14, (230, 170, 100), "Rogue giant", screen_ccw=False)
     # Grazing orbit: apoapsis 320 px, periapsis 40 px (Roche limit ~57 px).
     ra, rp = 320.0, 40.0
