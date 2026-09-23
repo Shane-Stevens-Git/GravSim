@@ -18,6 +18,7 @@ CULL_DISTANCE = 4000        # px from view center; farther bodies are deleted
 RESTITUTION = 0.8           # bounciness in bounce mode (1 = perfectly elastic)
 
 # --- Launch controls -----------------------------------------------------------
+CLICK_SLOP = 5               # px; a press+release shorter than this is a click, not a throw
 LAUNCH_SCALE = 1.0          # launch speed (px/s) per pixel dragged
 SLINGSHOT = False           # False: drag the way it should go. True: pull back like a slingshot.
 PREVIEW_STEPS = 320         # trajectory preview length (steps of PREVIEW_DT)

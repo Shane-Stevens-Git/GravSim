@@ -1,4 +1,6 @@
 """Gravity, integration, collisions and orbit math. No drawing here."""
+import math
+
 import numpy as np
 import pygame
 
@@ -182,3 +184,66 @@ def orbit_info(rel_pos, rel_vel, central_mass, impact_radius):
 def circular_speed(central_mass, r):
     """Speed needed for a circular orbit of radius r: v = sqrt(G*M/r)."""
     return (G * central_mass / max(r, 1e-6)) ** 0.5
+
+
+def dominant_body(body, bodies):
+    """The heavier body pulling hardest on `body` (what it 'orbits'), or None."""
+    best, best_pull = None, 0.0
+    for other in bodies:
+        if other is body or other.mass <= body.mass:
+            continue
+        d2 = max((other.pos - body.pos).length_squared(), 1e-6)
+        pull = other.mass / d2
+        if pull > best_pull:
+            best, best_pull = other, pull
+    return best
+
+
+def orbital_elements(rel_pos, rel_vel, mu):
+    """Two-body (Keplerian) orbit from relative position/velocity.
+
+    mu = G * (M + m). Returns a dict with eccentricity e, semi-latus rectum p,
+    periapsis direction omega (radians), periapsis/apoapsis distances,
+    semi-major axis a and period (None when unbound), and `bound`.
+    """
+    r = rel_pos.length()
+    if r < 1e-9 or mu <= 0:
+        return None
+    v2 = rel_vel.length_squared()
+    energy = v2 / 2 - mu / r
+    e_vec = ((v2 - mu / r) * rel_pos - rel_pos.dot(rel_vel) * rel_vel) / mu
+    e = e_vec.length()
+    h = rel_pos.x * rel_vel.y - rel_pos.y * rel_vel.x      # specific angular momentum
+    p = h * h / mu
+    omega = math.atan2(e_vec.y, e_vec.x) if e > 1e-9 else math.atan2(rel_pos.y, rel_pos.x)
+    bound = energy < 0 and e < 1
+    a = -mu / (2 * energy) if bound else None
+    return {
+        "e": e, "p": p, "omega": omega, "bound": bound, "a": a,
+        "period": 2 * math.pi * math.sqrt(a ** 3 / mu) if bound else None,
+        "periapsis": p / (1 + e),
+        "apoapsis": p / (1 - e) if bound else None,
+    }
+
+
+def orbit_points(el, n=180, max_r=20_000):
+    """Points (relative to the primary) along the conic described by `el`.
+    Ellipse for bound orbits, the outgoing/incoming hyperbola arm otherwise."""
+    if el is None or el["p"] < 1e-6:
+        return []                                  # radial fall: no conic to draw
+    e, p, w = el["e"], el["p"], el["omega"]
+    if el["bound"]:
+        thetas = [2 * math.pi * i / n for i in range(n + 1)]
+    else:
+        lim = math.acos(max(-1.0, -1.0 / e)) - 1e-3 if e > 1 else math.pi - 1e-3
+        thetas = [-lim + 2 * lim * i / n for i in range(n + 1)]
+    pts = []
+    for t in thetas:
+        denom = 1 + e * math.cos(t)
+        if denom <= 1e-9:
+            continue
+        r = p / denom
+        if r > max_r:
+            continue
+        pts.append((r * math.cos(t + w), r * math.sin(t + w)))
+    return pts

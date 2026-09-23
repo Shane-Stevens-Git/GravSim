@@ -21,6 +21,9 @@ python main.py
 | **Shift + scroll** | Mass of next body only (denser / lighter) |
 | **Left-drag, release** | Throw: press where it starts, drag the way it should go |
 | **Right-click** | Cancel a throw |
+| **Click a body** | Select it: inspector shows its orbit (period, eccentricity, peri/apoapsis) and draws the predicted ellipse |
+| **G** | Camera follows the selected body (again: back to the sun) |
+| **[ / ]**, **Del** | Halve-ish / raise the selected body's mass, delete it |
 | **Ctrl + scroll**, **+ / -** | Zoom in / out (0 resets) |
 | **Middle-drag** | Pan the view (switches the camera to fixed) |
 | **M / L / T / V** | Collisions merge/bounce, trails, aim preview, camera follow (or click the rows) |
@@ -28,7 +31,9 @@ python main.py
 | **F** | Pin / unpin the sun |
 | **H** | Show / hide the controls panel |
 | **C** / **R** | Clear thrown bodies / reset scene |
-| **Space** / **Esc** | Pause / quit |
+| **Space** / **N** | Pause / step one frame |
+| **,** / **.** | Slower / faster (0.25x to 8x, or click the Speed row) |
+| **Esc** | Quit |
 
 ### Sun panel
 

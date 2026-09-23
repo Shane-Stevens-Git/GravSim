@@ -242,6 +242,7 @@ class HUD:
         ("Drag", "Throw a body"),
         ("RMB", "Cancel throw"),
         ("1-5 / click", "Choose body type"),
+        ("Click body", "Select / inspect it"),
         ("Scroll", "Resize (keeps density)"),
         ("Shift+Scroll", "Change mass only"),
         ("Ctrl+Scroll", "Zoom (also + / -)"),
@@ -255,8 +256,10 @@ class HUD:
         ("Esc", "Quit"),
     ]
 
-    def draw_controls(self, surface):
-        if not self.show_help:
+    def draw_controls(self, surface, compact=False):
+        """Full controls legend, or just an 'H Controls' button when hidden
+        (or when `compact`, e.g. while the inspector needs the space)."""
+        if compact or not self.show_help:
             label = self.f_label.render("Controls", True, DIM)
             rect = self.panel(surface, (self.w - PAD - label.get_width() - 58, PAD,
                                         label.get_width() + 58, 34),
@@ -266,7 +269,7 @@ class HUD:
             self.keycap(surface, "H", (rect.x + 12, rect.y + 8))
             surface.blit(label, (rect.x + 42, rect.y + 8))
             self.add(rect, ("key", pygame.K_h))
-            return
+            return rect
         row_h, key_w = 24, 100
         rect = self.panel(surface, (self.w - PAD - 280, PAD, 280, 50 + row_h * len(self.CONTROLS)))
         x, y = rect.x + 14, rect.y + 12
@@ -279,6 +282,69 @@ class HUD:
             self.keycap(surface, key, (x, y))
             self.text(surface, self.f_label, desc, TEXT, (x + key_w, y + 1))
             y += row_h
+        return rect
+
+    # --- Inspector (right, under the controls panel) ---------------------------------
+    def draw_inspector(self, surface, y, info):
+        """Details for the selected body. info: name, color, accent, kind, mass,
+        primary (name or None), speed, dist, el (orbital elements or None), following."""
+        w = 280
+        rect = self.panel(surface, (self.w - PAD - w, y, w, 268))
+        x, ty = rect.x + 14, rect.y + 12
+
+        self.star_icon(surface, (x + 6, ty + 9), 6, info["color"], info["kind"])
+        self.text(surface, self.f_title, info["name"].upper(), info["accent"], (x + 20, ty))
+        close = pygame.Rect(rect.right - 34, rect.y + 8, 24, 24)
+        if self.hovered(close):
+            pygame.draw.rect(surface, HOVER_BG, close, border_radius=5)
+        c = close.center
+        pygame.draw.line(surface, DIM, (c[0] - 5, c[1] - 5), (c[0] + 5, c[1] + 5), 2)
+        pygame.draw.line(surface, DIM, (c[0] - 5, c[1] + 5), (c[0] + 5, c[1] - 5), 2)
+        self.add(close, ("sel_close", None))
+
+        ty += 30
+        self.text(surface, self.f_label, "Orbiting", DIM, (x, ty))
+        self.text(surface, self.f_label, info["primary"] or "nothing heavier", TEXT,
+                  (rect.right - 14, ty), "topright")
+
+        el = info["el"]
+        cells = [("Speed", f"{info['speed']:.0f} px/s"),
+                 ("Distance", f"{info['dist']:.0f} px" if info["dist"] is not None else "-")]
+        if el:
+            cells += [("Eccentricity", f"{el['e']:.3f}"),
+                      ("Period", f"{el['period']:.1f} s" if el["bound"] else "-"),
+                      ("Periapsis", f"{el['periapsis']:.0f} px"),
+                      ("Apoapsis", f"{el['apoapsis']:.0f} px" if el["bound"] else "-")]
+        ty += 26
+        col_w = (w - 28) // 2
+        for i, (label, value) in enumerate(cells):
+            cx, cy = x + (i % 2) * col_w, ty + (i // 2) * 36
+            self.text(surface, self.f_small, label.upper(), DIM, (cx, cy))
+            self.text(surface, self.f_num, value, TEXT, (cx, cy + 14))
+        ty += 3 * 36
+
+        if el:
+            if not el["bound"]:
+                label, color = "Escape trajectory", BAD
+            elif el["e"] < 0.1:
+                label, color = "Near-circular orbit", GOOD
+            else:
+                label, color = "Elliptical orbit", INFO
+            pygame.draw.circle(surface, color, (x + 4, ty + 9), 4)
+            self.text(surface, self.f_label, label, color, (x + 14, ty))
+        ty += 28
+
+        self.text(surface, self.f_label, "Mass", DIM, (x, ty + 3))
+        self.text(surface, self.f_num, f"{info['mass']:.4g}", TEXT, (x + 52, ty + 4))
+        self.button(surface, (rect.right - 14 - 62, ty, 28, 24), "-", ("sel_mass", 1 / 1.5))
+        self.button(surface, (rect.right - 14 - 28, ty, 28, 24), "+", ("sel_mass", 1.5))
+        ty += 34
+
+        bw = (w - 28 - 10) // 2
+        self.button(surface, (x, ty, bw, 28), "Following" if info["following"] else "Follow",
+                    ("sel_follow", None), key="G", on=info["following"])
+        self.button(surface, (x + bw + 10, ty, bw, 28), "Delete", ("sel_delete", None), key="Del")
+        return rect
 
     # --- Body toolbar (bottom-center) -------------------------------------------------
     def draw_toolbar(self, surface, presets, selected_idx, radius, mass, size_mult, mass_mult,
