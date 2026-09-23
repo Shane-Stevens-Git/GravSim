@@ -128,7 +128,7 @@ def bounce(a, b):
         b.pos += n * (overlap * inv_b / (inv_a + inv_b))
 
 
-def simulate(bodies, dt, steps, mode, events=None):
+def simulate(bodies, dt, steps, mode, events=None, rng=random):
     """Advance `steps` fixed steps, handling collisions. Mutates `bodies`.
 
     mode: "merge", "shatter" (merge, but fast impacts fragment) or "bounce".
@@ -177,7 +177,7 @@ def simulate(bodies, dt, steps, mode, events=None):
                 point = (a.pos + offset.normalize() * a.radius if offset.length() > 1e-9
                          else pygame.Vector2(a.pos))
                 if mode == "shatter" and should_shatter(a, b):
-                    debris = shatter(a, b)
+                    debris = shatter(a, b, rng)
                     new_bodies.extend(debris)
                     kind = "shatter"
                 else:

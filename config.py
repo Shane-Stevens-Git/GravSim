@@ -9,6 +9,11 @@ BG_COLOR = (8, 10, 20)
 # Units: distance in pixels, time in seconds, mass in arbitrary "mass units".
 G = 500.0
 PHYSICS_DT = 1 / 240        # fixed physics step (s), independent of frame rate
+DETERMINISTIC = True        # True: every frame advances exactly speed/FPS of sim time, so
+                            # the same scene + inputs always play out the same way (if the
+                            # PC can't keep up, the sim slows down instead of skipping).
+                            # False: follow the real clock.
+SIM_SEED = 12345            # seed for debris randomness (reset when a scene loads)
 MAX_FRAME_TIME = 0.05       # don't try to "catch up" more than this after a stall
 TIME_SPEEDS = [0.25, 0.5, 1, 2, 4, 8]   # simulation speed choices (, and . keys)
 DEFAULT_SPEED_IDX = 2

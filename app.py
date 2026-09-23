@@ -1,6 +1,7 @@
 """The GravSim application: state, input handling and drawing."""
 import math
 import os
+import random
 from collections import deque
 
 import pygame
@@ -65,6 +66,7 @@ class App:
         self.select_press = None    # mouse-down position while using the select tool
         self.select_panned = False
         self.history = History()    # rewind buffer
+        self.rng = random.Random(SIM_SEED)   # debris randomness (seeded: repeatable)
         self.rewinding = False      # Z held
         self.orbit_tool = False     # O: a click places a body on a circular orbit
         self.field = FieldOverlay()
@@ -118,6 +120,7 @@ class App:
         self.sim_time = sc.get("sim_time", 0.0)
         self.accumulator = 0.0
         self.history.clear(self.sim_time)
+        self.rng = random.Random(SIM_SEED)
         self.reset_energy_log()
         self.clear_trails()
 
@@ -611,7 +614,7 @@ class App:
     def tidal_check(self):
         """SHATTER mode: bodies inside a heavier body's Roche limit break up."""
         for victim, primary in tidal_victims(self.bodies):
-            debris = tidal_disrupt(victim)
+            debris = tidal_disrupt(victim, self.rng)
             self.bodies = [b for b in self.bodies if b is not victim] + debris
             self.events.append(("tidal", pygame.Vector2(victim.pos),
                                 victim.mass * victim.vel.length_squared(), victim.mass))
@@ -715,7 +718,7 @@ class App:
             return
         advancing = not self.paused or self.step_request > 0
         if not self.paused:
-            self.accumulator += frame_time * self.speed
+            self.accumulator += (self.speed / FPS) if DETERMINISTIC else frame_time * self.speed
         elif self.step_request > 0:             # one frame's worth of sim time
             self.accumulator += self.speed / FPS
             self.step_request -= 1
@@ -729,7 +732,7 @@ class App:
                 if b.pilot is not None:
                     keys = self.keys_held if b is self.selection else set()
                     steer(b, self.bodies, steps * PHYSICS_DT, frame_time, keys)
-            simulate(self.bodies, PHYSICS_DT, steps, self.mode, self.events)
+            simulate(self.bodies, PHYSICS_DT, steps, self.mode, self.events, self.rng)
             if self.mode == "shatter":
                 self.tidal_check()
             for kind, pos, strength, mass in self.events:
