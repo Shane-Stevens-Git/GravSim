@@ -302,7 +302,7 @@ class HUD:
         ]),
     ]
 
-    def draw_controls(self, surface, compact=False):
+    def draw_controls(self, surface, compact=False, settings_rows=()):
         """Controls legend with tabs, or just an 'H Controls' button when hidden
         (or when `compact`, e.g. while the inspector needs the space)."""
         if compact or not self.show_help:
@@ -314,9 +314,11 @@ class HUD:
             self.add(rect, ("key", pygame.K_h))
             return rect
         row_h, key_w, w = 22, 100, 290
-        rows = self.CONTROL_TABS[self.help_tab][1]
+        tabs = [name for name, _ in self.CONTROL_TABS] + ["Physics"]
+        self.help_tab %= len(tabs)
         longest = max(len(r) for _, r in self.CONTROL_TABS)     # fixed height per panel
-        rect = self.panel(surface, (self.w - PAD - w, PAD, w, 86 + row_h * longest))
+        body_h = max(row_h * longest, 34 * len(settings_rows) + 40)
+        rect = self.panel(surface, (self.w - PAD - w, PAD, w, 86 + body_h))
         x, y = rect.x + 14, rect.y + 12
         title = self.text(surface, self.f_title, "CONTROLS", ACCENT, (x, y))
         self.text(surface, self.f_small, "Tab: next tab", DIM, (title.right + 10, y + 3))
@@ -324,12 +326,22 @@ class HUD:
         cap = self.keycap(surface, "H", (hide.x - 26, y))
         self.add(cap.union(hide).inflate(8, 8), ("key", pygame.K_h))
         y += 28
-        tab_w = (w - 28 - 3 * 4) // len(self.CONTROL_TABS)
-        for i, (name, _) in enumerate(self.CONTROL_TABS):
+        tab_w = (w - 28 - (len(tabs) - 1) * 4) // len(tabs)
+        for i, name in enumerate(tabs):
             self.button(surface, (x + i * (tab_w + 4), y, tab_w, 24), name, ("help_tab", i),
                         on=i == self.help_tab, small=True)
         y += 36
-        for key, desc in rows:
+        if self.help_tab == len(self.CONTROL_TABS):      # Physics: live settings
+            for key, label, value, t, changed in settings_rows:
+                self.text(surface, self.f_label, label, TEXT if changed else DIM, (x, y))
+                self.text(surface, self.f_num, value, ACCENT if changed else TEXT,
+                          (rect.right - 14, y + 1), "topright")
+                self.slider(surface, (x + 4, y + 22, w - 36, 5), t, ACCENT, "set:" + key)
+                y += 34
+            self.button(surface, (x, y + 4, w - 28, 26), "Reset to defaults",
+                        ("settings_defaults", None))
+            return rect
+        for key, desc in self.CONTROL_TABS[self.help_tab][1]:
             self.keycap(surface, key, (x, y))
             self.text(surface, self.f_label, desc, TEXT, (x + key_w, y + 1))
             y += row_h

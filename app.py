@@ -6,6 +6,7 @@ from collections import deque
 
 import pygame
 
+import settings
 import ui
 from body import Body, View
 from config import *
@@ -442,6 +443,8 @@ class App:
         elif name == "sun_radius":
             lo, hi = SUN_RADIUS_RANGE
             self.sun.radius = round(lo + (hi - lo) * t)
+        elif name.startswith("set:"):             # Physics tab sliders
+            self.apply_setting(name[4:], settings.from_t(name[4:], t))
 
     # --- Input ---------------------------------------------------------------------
     def handle_key(self, k):
@@ -452,7 +455,7 @@ class App:
             self.load_scene_file()
         elif k == pygame.K_TAB:                 # cycle the controls tabs
             self.hud.show_help = True
-            self.hud.help_tab = (self.hud.help_tab + 1) % len(ui.HUD.CONTROL_TABS)
+            self.hud.help_tab = (self.hud.help_tab + 1) % (len(ui.HUD.CONTROL_TABS) + 1)
         elif k == pygame.K_F11:
             self.toggle_fullscreen()
         elif k == pygame.K_F5:
@@ -581,6 +584,8 @@ class App:
                 self.selection.ring_color = tuple(arg)
             else:
                 self.selection.color = tuple(arg)
+        elif kind == "settings_defaults":
+            self.reset_settings()
         elif kind == "help_tab":
             self.hud.help_tab = arg
             self.hud.show_help = True
@@ -660,6 +665,20 @@ class App:
                                 victim.mass * victim.vel.length_squared(), victim.mass))
             self.notify(f"{victim.name} was torn apart by {primary.name}'s tides")
         self.after_removals()
+
+    def apply_setting(self, key, value):
+        settings.set(key, value)
+        if key == "TRAIL_LENGTH":                 # resize existing trails too
+            for b in self.bodies:
+                if not b.particle and b is not self.sun:
+                    b.trail = deque(b.trail, maxlen=settings.get("TRAIL_LENGTH"))
+        elif key == "G":                          # energy scale changes: restart graph
+            self.reset_energy_log()
+
+    def reset_settings(self):
+        for key, value in settings.DEFAULTS.items():
+            self.apply_setting(key, value)
+        self.notify("Physics settings reset to defaults")
 
     def reset_energy_log(self):
         self.energy_log.clear()
@@ -966,7 +985,8 @@ class App:
             sun.fixed, sun.accent, compact=self.show_energy))
         if self.show_energy:
             left.union_ip(hud.draw_energy(screen, list(self.energy_log), *self.energy_scales))
-        controls = hud.draw_controls(screen, compact=inspector is not None)
+        controls = hud.draw_controls(screen, compact=inspector is not None,
+                                     settings_rows=settings.rows())
         if inspector is not None:
             hud.draw_inspector(screen, controls.bottom + 10, inspector)
         hud.draw_toolbar(screen, PRESETS, self.preset_idx, r, m, self.size_mult,
