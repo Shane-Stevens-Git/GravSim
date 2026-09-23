@@ -10,6 +10,9 @@ BG_COLOR = (8, 10, 20)
 G = 500.0
 PHYSICS_DT = 1 / 240        # fixed physics step (s), independent of frame rate
 MAX_FRAME_TIME = 0.05       # don't try to "catch up" more than this after a stall
+TIME_SPEEDS = [0.25, 0.5, 1, 2, 4, 8]   # simulation speed choices (, and . keys)
+DEFAULT_SPEED_IDX = 2
+MAX_STEPS_PER_FRAME = 96    # safety cap so high speeds can't freeze the app
 SOFTENING = 5.0             # px; avoids infinite force if r -> 0
 CULL_DISTANCE = 4000        # px from view center; farther bodies are deleted
 RESTITUTION = 0.8           # bounciness in bounce mode (1 = perfectly elastic)

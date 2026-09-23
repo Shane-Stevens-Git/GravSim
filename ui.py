@@ -176,7 +176,7 @@ class HUD:
                 pygame.draw.rect(surface, HOVER_BG, row, border_radius=5)
             self.add(row, action)
             self.keycap(surface, key, (x, y))
-            self.text(surface, self.f_label, label, TEXT, (x + 30, y + 1))
+            self.text(surface, self.f_label, label, TEXT, (x + 38, y + 1))
             self.text(surface, self.f_small, value, ACCENT if on else DIM,
                       (rect.right - 14, y + 3), "topright")
             y += row_h
@@ -248,6 +248,8 @@ class HUD:
         ("Middle-drag", "Pan the view"),
         ("S", "Sun panel"),
         ("Space", "Pause / resume"),
+        ("N", "Step one frame"),
+        (", / .", "Slower / faster"),
         ("C", "Clear thrown bodies"),
         ("R", "Reset scene"),
         ("Esc", "Quit"),
@@ -351,7 +353,7 @@ class HUD:
 
     def draw_paused(self, surface):
         img = self.f_title.render("PAUSED", True, TEXT)
-        hint = self.f_label.render("Space to resume", True, DIM)
+        hint = self.f_label.render("Space to resume  ·  N to step", True, DIM)
         w = img.get_width() + hint.get_width() + 40
         rect = self.panel(surface, ((self.w - w) // 2, PAD, w, 34), border=ACCENT, block=False)
         surface.blit(img, (rect.x + 14, rect.y + 8))

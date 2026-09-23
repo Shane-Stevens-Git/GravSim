@@ -33,6 +33,8 @@ class App:
         self.follow = True          # camera keeps the sun centered
         self.mode = "merge"         # collision mode: "merge" or "bounce"
         self.paused = False
+        self.speed_idx = DEFAULT_SPEED_IDX
+        self.step_request = 0       # frames to advance while paused (N key)
         self.running = True
         self.accumulator = 0.0
         self.sim_time = 0.0
@@ -84,6 +86,15 @@ class App:
         # While following, the sun is locked to the center, so zoom about it.
         self.view.zoom_by(factor, None if self.following else screen_pos)
 
+    @property
+    def speed(self):
+        return TIME_SPEEDS[self.speed_idx]
+
+    def change_speed(self, delta, wrap=False):
+        n = len(TIME_SPEEDS)
+        i = self.speed_idx + delta
+        self.speed_idx = i % n if wrap else min(max(i, 0), n - 1)
+
     # --- Sun controls --------------------------------------------------------------
     def sun_type_index(self):
         s = self.sun
@@ -127,6 +138,13 @@ class App:
             self.running = False
         elif k == pygame.K_SPACE:
             self.paused = not self.paused
+        elif k == pygame.K_n:                   # step one frame (pauses first)
+            self.paused = True
+            self.step_request += 1
+        elif k in (pygame.K_PERIOD, pygame.K_GREATER):
+            self.change_speed(+1)
+        elif k in (pygame.K_COMMA, pygame.K_LESS):
+            self.change_speed(-1)
         elif k == pygame.K_h:
             self.hud.show_help = not self.hud.show_help
         elif k == pygame.K_s:
@@ -167,6 +185,8 @@ class App:
             self.select_preset(arg)
         elif kind == "sun_type":
             self.apply_sun_type(arg)
+        elif kind == "speed":
+            self.change_speed(+1, wrap=True)
         elif kind == "sun_recenter":
             self.recenter()
         elif kind == "slider":
@@ -222,10 +242,17 @@ class App:
 
     # --- Simulation --------------------------------------------------------------------
     def update(self, frame_time):
+        advancing = not self.paused or self.step_request > 0
         if not self.paused:
-            self.accumulator += frame_time
+            self.accumulator += frame_time * self.speed
+        elif self.step_request > 0:             # one frame's worth of sim time
+            self.accumulator += self.speed / FPS
+            self.step_request -= 1
+        if advancing:
             steps = int(self.accumulator / PHYSICS_DT)
             self.accumulator -= steps * PHYSICS_DT
+            if steps > MAX_STEPS_PER_FRAME:     # can't keep up: slow down, don't freeze
+                steps, self.accumulator = MAX_STEPS_PER_FRAME, 0.0
             simulate(self.bodies, PHYSICS_DT, steps, self.mode)
             self.sim_time += steps * PHYSICS_DT
 
@@ -239,7 +266,7 @@ class App:
         self.bodies = [b for b in self.bodies if b.fixed or b is self.sun
                        or b.pos.distance_to(self.view.center) < cull]
 
-        if self.show_trails and not self.paused:
+        if self.show_trails and advancing:
             sun, following = self.sun, self.following
             for b in self.bodies:
                 # While following, other trails are stored relative to the sun (so
@@ -300,6 +327,7 @@ class App:
             ("V", "Camera", "FOLLOW SUN" if following else "FIXED", following,
              ("key", pygame.K_v)),
             ("0", "Zoom", f"{view.zoom:.2f}x", abs(view.zoom - 1) > 1e-6, ("key", pygame.K_0)),
+            ("< >", "Speed", f"{self.speed:g}x", self.speed != 1, ("speed", None)),
         ]
         status = hud.draw_status(screen, self.clock.get_fps(), len(self.bodies),
                                  self.sim_time, toggles)
