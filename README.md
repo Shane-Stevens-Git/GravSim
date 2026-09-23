@@ -23,7 +23,7 @@ python main.py
 | **Right-click** | Cancel a throw |
 | **Click a body** | Select it: inspector shows its orbit (period, eccentricity, peri/apoapsis) and draws the predicted ellipse |
 | **G** | Camera follows the selected body (again: back to the sun) |
-| **[ / ]**, **Del** | Halve-ish / raise the selected body's mass, delete it |
+| **[ / ]**, **Del** | Lower / raise the selected body's mass (x1.5), delete it |
 | **Ctrl + scroll**, **+ / -** | Zoom in / out (0 resets) |
 | **Middle-drag** | Pan the view (switches the camera to fixed) |
 | **M / L / T / V** | Collisions merge/bounce, trails, aim preview, camera follow (or click the rows) |
