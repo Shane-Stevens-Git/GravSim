@@ -255,6 +255,7 @@ class HUD:
         ("O", "Orbit tool (click = orbit)"),
         ("W", "Gravity field overlay"),
         ("E", "Energy & momentum graph"),
+        ("X", "Sound on / off"),
         ("B", "Ring around selected"),
         ("Z (hold)", "Rewind"),
         ("Ctrl+S / O", "Save / load scene"),

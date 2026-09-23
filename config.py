@@ -89,3 +89,10 @@ SHATTER_MIN_PIECES = 4
 SHATTER_MAX_PIECES = 16
 ROCHE_COEFF = 0.9           # Roche limit = k * r * (M/m)^(1/3); real fluid bodies: 2.44
 ROCHE_MIN_RADIUS = 3        # smaller bodies are never tidally disrupted
+
+# --- Effects & sound ------------------------------------------------------------------
+FLASH_MS = 550              # collision flash duration
+GLOW_STAR_EXTENT = 5.0      # bloom radius as a multiple of body radius
+GLOW_BODY_EXTENT = 3.0
+SOUND_ON = True             # X toggles
+SOUND_VOLUME = 0.6

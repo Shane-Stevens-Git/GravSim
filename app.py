@@ -8,12 +8,14 @@ import pygame
 import ui
 from body import Body, View
 from config import *
+from effects import Flashes, Starfield
 from field import FieldOverlay
 from history import History
 from physics import (circular_speed, dominant_body, orbit_info, orbit_points,
                      orbital_elements, predict_path, simulate, strongest_pull_at,
                      system_energy, tidal_disrupt, tidal_victims)
-from render import draw_arrow, draw_points, make_starfield
+from render import draw_arrow, draw_points
+from sound import Sound
 from scenes import (QUICKSAVE, SCENARIOS, ask_path, lagrange_points, load_file,
                     place_in_orbit, ring_around, save_file, to_dict)
 
@@ -27,7 +29,9 @@ class App:
         pygame.display.set_caption("GravSim")
         self.clock = pygame.time.Clock()
         self.hud = ui.HUD(WIDTH, HEIGHT)
-        self.background = make_starfield()
+        self.starfield = Starfield()
+        self.flashes = Flashes()
+        self.sound = Sound()
         self.view = View()
 
         self.preset_idx = 2         # start on "Planet"
@@ -355,6 +359,11 @@ class App:
             self.rewinding = True
         elif k == pygame.K_o:
             self.orbit_tool = not self.orbit_tool
+        elif k == pygame.K_x:
+            if not self.sound.available:
+                self.notify("No audio device found - sound unavailable")
+            else:
+                self.notify("Sound on" if self.sound.toggle() else "Sound off")
         elif k == pygame.K_w:
             self.show_field = not self.show_field
         elif k == pygame.K_e:
@@ -501,7 +510,8 @@ class App:
         for victim, primary in tidal_victims(self.bodies):
             debris = tidal_disrupt(victim)
             self.bodies = [b for b in self.bodies if b is not victim] + debris
-            self.events.append(("tidal", pygame.Vector2(victim.pos), victim.mass))
+            self.events.append(("tidal", pygame.Vector2(victim.pos),
+                                victim.mass * victim.vel.length_squared(), victim.mass))
             self.notify(f"{victim.name} was torn apart by {primary.name}'s tides")
         self.after_removals()
 
@@ -597,6 +607,9 @@ class App:
             simulate(self.bodies, PHYSICS_DT, steps, self.mode, self.events)
             if self.mode == "shatter":
                 self.tidal_check()
+            for kind, pos, strength, mass in self.events:
+                self.flashes.add(kind, pos, strength)
+                self.sound.play(kind, mass, strength)
             self.sim_time += steps * PHYSICS_DT
             self.history.record(self.sim_time, self.bodies, self.sun, self.target)
             if self.show_energy:
@@ -673,7 +686,7 @@ class App:
         mouse = pygame.Vector2(pygame.mouse.get_pos())
         following, target = self.following, self.target
 
-        screen.blit(self.background, (0, 0))
+        self.starfield.draw(screen, view)
         if self.show_field:
             self.field.draw(screen, self.bodies, view)
         crowded = self.crowded
@@ -689,6 +702,7 @@ class App:
         for b in self.bodies:
             if not (dots and b.particle):
                 b.draw(screen, view)
+        self.flashes.draw(screen, view)
         if self.show_lagrange and self.lagrange:
             pts = lagrange_points(*self.lagrange)
             hud.draw_lagrange(screen, {k: view.to_screen(p) for k, p in pts.items()})
@@ -752,6 +766,8 @@ class App:
              ("key", pygame.K_w)),
             ("E", "Energy graph", "ON" if self.show_energy else "OFF", self.show_energy,
              ("key", pygame.K_e)),
+            ("X", "Sound", ("ON" if self.sound.enabled else "OFF") if self.sound.available
+             else "N/A", self.sound.enabled, ("key", pygame.K_x)),
             ("Z", "Rewind", f"{self.history.seconds:.0f} s", self.history.seconds > 0,
              ("rewind", 25)),
             ("P", "Scene", (SCENARIOS[self.scenario_idx][0] if self.scenario_idx is not None

@@ -1,6 +1,7 @@
 """Bodies and the camera view (what things are and how they're drawn)."""
 from collections import deque
 
+import numpy as np
 import pygame
 
 from config import *
@@ -61,28 +62,36 @@ class Body:
         return BLACK_HOLE_RING if self.kind == "blackhole" else self.color
 
     @classmethod
-    def glow_surface(cls, radius, color):
-        """Soft translucent halo, cached per (radius, color)."""
-        key = (radius, color)
+    def glow_surface(cls, radius, color, star):
+        """Bloom: a smooth radial falloff (brightness ~ 1 / (1 + (d/r)^2)),
+        drawn with additive blending so overlapping glows brighten. Stars get
+        a wider, stronger bloom. Cached per (radius, color, star)."""
+        key = (radius, color, star)
         if key not in cls._glow_cache:
-            if len(cls._glow_cache) > 500:
+            if len(cls._glow_cache) > 300:
                 cls._glow_cache.clear()
-            size = radius * 6
-            surf = pygame.Surface((size, size), pygame.SRCALPHA)
-            c = radius * 3
-            for i, alpha in enumerate((18, 30, 45)):
-                pygame.draw.circle(surf, (*color, alpha), (c, c), int(radius * (2.6 - i * 0.5)))
-            cls._glow_cache[key] = surf
+            extent = radius * (GLOW_STAR_EXTENT if star else GLOW_BODY_EXTENT)
+            size = int(extent * 2) + 2
+            y, x = np.ogrid[:size, :size]
+            d = np.hypot(x - size / 2, y - size / 2)
+            strength, spread = (0.6, 1.0) if star else (0.35, 2.5)
+            intensity = (strength / (1 + (d / radius) ** 2 * spread)
+                         * np.clip(1 - d / extent, 0, 1) ** 2)
+            rgb = np.clip(np.array(color, dtype=float) * intensity[..., None], 0, 255)
+            cls._glow_cache[key] = pygame.surfarray.make_surface(
+                rgb.astype(np.uint8).transpose(1, 0, 2))
         return cls._glow_cache[key]
 
     def draw(self, surface, view):
         p = view.to_screen(self.pos)
         cx, cy = round(p.x), round(p.y)
         r = max(1, round(self.radius * view.zoom))
-        if not (-r * 3 < cx < WIDTH + r * 3 and -r * 3 < cy < HEIGHT + r * 3):
+        if not (-r * 5 < cx < WIDTH + r * 5 and -r * 5 < cy < HEIGHT + r * 5):
             return
-        if 2 <= r <= 120:
-            surface.blit(self.glow_surface(r, self.accent), (cx - r * 3, cy - r * 3))
+        if 2 <= r <= 90 and not self.particle:
+            glow = self.glow_surface(r, self.accent, self.kind in ("star", "blackhole"))
+            half = glow.get_width() // 2
+            surface.blit(glow, (cx - half, cy - half), special_flags=pygame.BLEND_RGB_ADD)
         if self.kind == "blackhole":
             pygame.draw.circle(surface, BLACK_HOLE_RING, (cx, cy),
                                r + max(2, r // 4), max(1, r // 6))

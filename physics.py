@@ -125,7 +125,7 @@ def simulate(bodies, dt, steps, mode, events=None):
     """Advance `steps` fixed steps, handling collisions. Mutates `bodies`.
 
     mode: "merge", "shatter" (merge, but fast impacts fragment) or "bounce".
-    If `events` is a list, (kind, position, strength) tuples are appended
+    If `events` is a list, (kind, position, strength, mass) tuples are appended
     for each collision - used for flashes and sounds.
     """
     done = 0
@@ -159,7 +159,10 @@ def simulate(bodies, dt, steps, mode, events=None):
                 if b.mass > a.mass:          # heavier body survives
                     a, b = b, a
                     i, j = j, i
-                point = pygame.Vector2(a.pos)
+                # Flash where the smaller body hit: on the survivor's surface
+                offset = b.pos - a.pos
+                point = (a.pos + offset.normalize() * a.radius if offset.length() > 1e-9
+                         else pygame.Vector2(a.pos))
                 if mode == "shatter" and should_shatter(a, b):
                     debris = shatter(a, b)
                     new_bodies.extend(debris)
@@ -169,12 +172,12 @@ def simulate(bodies, dt, steps, mode, events=None):
                     kind = "merge"
                 gone.add(j)
                 if events is not None and not (a.particle or b.particle):
-                    events.append((kind, point, b.mass * speed * speed))
+                    events.append((kind, point, b.mass * speed * speed, a.mass))
             else:
                 bounce(a, b)
                 if events is not None and not (a.particle or b.particle):
                     events.append(("bounce", (a.pos + b.pos) / 2,
-                                   min(a.mass, b.mass) * speed * speed))
+                                   min(a.mass, b.mass) * speed * speed, max(a.mass, b.mass)))
         if gone or new_bodies:
             bodies[:] = [b for k, b in enumerate(bodies) if k not in gone] + new_bodies
             new_bodies = []

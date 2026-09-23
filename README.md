@@ -33,6 +33,7 @@ python main.py
 | **B** | Add a ring of particles around the selected body (inside its Hill sphere) |
 | **W** | Gravity field overlay: potential wells as a heatmap with contour lines |
 | **E** | Energy & momentum graph (hover for values). Flat = conserved; steps = something was added or merged |
+| **X** | Sound on / off (collision sounds are synthesized, no audio files) |
 | **Z** (hold) | Rewind, up to 60 s back (clicking the Rewind row jumps back 5 s) |
 | **K** | Show Lagrange points L1-L5 (for the selected body and what it orbits) |
 | **Ctrl+S** / **Ctrl+O** | Save / load a scene file (saved in `saves/`) |
@@ -88,7 +89,24 @@ Tip: the HUD shows the circular-orbit speed at your launch point. Drag
 sideways to the sun at about that speed for a circle; about 1.4x escapes.
 
 Tunables (G, time step, restitution, trail length, slingshot-style
-aiming, ...) are constants at the top of `main.py`.
+aiming, effects, sound volume, ...) are constants in `config.py`.
+
+## Code layout
+
+| File | What's in it |
+|---|---|
+| `main.py` | entry point |
+| `app.py` | the App: input, update loop, drawing |
+| `physics.py` | gravity (NumPy), Verlet integration, collisions, orbits, Roche limit |
+| `body.py` | Body and the camera View |
+| `scenes.py` | preset scenarios, Lagrange solver, spawn tools, save/load |
+| `history.py` | rewind buffer |
+| `field.py` | gravity field overlay |
+| `effects.py` | parallax starfield, collision flashes |
+| `sound.py` | synthesized collision sounds |
+| `ui.py` | on-screen panels |
+| `render.py` | small drawing helpers |
+| `config.py` | all tunable constants |
 
 ## Roadmap
 
