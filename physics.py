@@ -7,19 +7,26 @@ import pygame
 from config import *
 
 
-def accelerations(pos, mass, sources=None):
-    """N-body gravity: a_i = sum_j G*m_j * (p_j - p_i) / |p_j - p_i|^3.
+def accelerations(pos, mass, sources=None, soft2=None):
+    """N-body gravity: a_i = sum_j G*m_j * (p_j - p_i) / (|p_j - p_i|^2 + eps_ij^2)^1.5.
 
     `sources` (index array) limits which bodies pull - test particles don't,
     which turns O(n^2) into O(n * k) for k massive bodies. A body's pull on
     itself is automatically zero because p_j - p_i = 0.
+    `soft2` holds each body's softening length squared; a pair uses the mean,
+    so forces stay symmetric (Newton's third law) and energy is conserved.
     """
     if sources is not None:
         src_pos, src_mass = pos[sources], mass[sources]
     else:
         src_pos, src_mass = pos, mass
     d = src_pos[None, :, :] - pos[:, None, :]       # d[i, j] = p_j - p_i
-    dist_sq = (d * d).sum(axis=-1) + SOFTENING ** 2
+    if soft2 is None:
+        eps2 = SOFTENING ** 2
+    else:
+        src_soft2 = soft2[sources] if sources is not None else soft2
+        eps2 = (soft2[:, None] + src_soft2[None, :]) / 2
+    dist_sq = (d * d).sum(axis=-1) + eps2
     inv_r3 = dist_sq ** -1.5
     return G * (d * (src_mass[None, :] * inv_r3)[:, :, None]).sum(axis=1)
 
@@ -33,15 +40,15 @@ def pack(bodies):
     return pos, vel, mass, movable
 
 
-def verlet(pos, vel, acc, mass, movable, dt, sources=None):
+def verlet(pos, vel, acc, mass, movable, dt, sources=None, soft2=None):
     """One velocity-Verlet step, in place. Returns the new accelerations."""
     pos += movable * (vel * dt + 0.5 * acc * dt * dt)
-    new_acc = accelerations(pos, mass, sources)
+    new_acc = accelerations(pos, mass, sources, soft2)
     vel += movable * (0.5 * (acc + new_acc) * dt)
     return new_acc
 
 
-def find_collisions(pos, vel, radii, mode, cols=None):
+def find_collisions(pos, vel, radii, mode, cols=None, particle=None, absorbs=None):
     """Sorted index pairs (i, j), i < j, of overlapping bodies.
 
     `cols` (index array of regular bodies) restricts checks to pairs that
@@ -57,6 +64,9 @@ def find_collisions(pos, vel, radii, mode, cols=None):
     if mode == "bounce":
         approaching = ((vel[cols][None, :, :] - vel[:, None, :]) * d).sum(axis=-1) < 0
         hit &= approaching
+    if particle is not None and absorbs is not None and not absorbs.all():
+        # Test particles fly through bodies that don't absorb them (galaxy cores)
+        hit &= ~(particle[:, None] & ~absorbs[cols][None, :])
     ii, cc = np.nonzero(hit)
     pairs = {(min(i, j), max(i, j)) for i, j in zip(ii.tolist(), cols[cc].tolist()) if i != j}
     return sorted(pairs)
@@ -83,6 +93,7 @@ def merge(a, b):
         a.color = tuple(int((ca * a.mass + cb * b.mass) / m) for ca, cb in zip(a.color, b.color))
     a.radius = max(2, round((a.radius ** 3 + b.radius ** 3) ** (1 / 3)))
     a.particle = a.particle and b.particle      # absorbing a real body makes it real
+    a.soft = max(a.soft, b.soft)
     a.mass = m
 
 
@@ -115,12 +126,14 @@ def simulate(bodies, dt, steps, mode):
         radii = np.array([b.radius for b in bodies], dtype=float)
         particle = np.array([b.particle for b in bodies], dtype=bool)
         sources = np.nonzero(~particle)[0] if particle.any() else None
-        acc = accelerations(pos, mass, sources)
+        soft2 = np.array([b.soft ** 2 for b in bodies], dtype=float)
+        absorbs = np.array([b.absorbs for b in bodies], dtype=bool)
+        acc = accelerations(pos, mass, sources, soft2)
         pairs = []
         while done < steps and not pairs:
-            acc = verlet(pos, vel, acc, mass, movable, dt, sources)
+            acc = verlet(pos, vel, acc, mass, movable, dt, sources, soft2)
             done += 1
-            pairs = find_collisions(pos, vel, radii, mode, sources)
+            pairs = find_collisions(pos, vel, radii, mode, sources, particle, absorbs)
         for b, p, v in zip(bodies, pos, vel):
             b.pos.update(p[0], p[1])
             b.vel.update(v[0], v[1])
@@ -162,10 +175,11 @@ def predict_path(bodies, start, vel0, frame_body=None, test_radius=0):
     vel = np.vstack([vel, vel0])
     mass = np.append(mass, 0.0)
     movable = np.vstack([movable, [[1.0]]])
-    acc = accelerations(pos, mass)
+    soft2 = np.append([b.soft ** 2 for b in heavy], SOFTENING ** 2)
+    acc = accelerations(pos, mass, None, soft2)
     points = []
     for i in range(PREVIEW_STEPS):
-        acc = verlet(pos, vel, acc, mass, movable, PREVIEW_DT)
+        acc = verlet(pos, vel, acc, mass, movable, PREVIEW_DT, None, soft2)
         p = pos[-1].copy()
         if (np.hypot(*(pos[:-1] - p).T) < radii + test_radius).any():
             break                                   # would hit something
@@ -296,9 +310,10 @@ def system_energy(bodies):
     if not real:
         return 0.0, 0.0, pygame.Vector2()
     pos, vel, mass, _ = pack(real)
+    soft2 = np.array([b.soft ** 2 for b in real], dtype=float)
     ke = 0.5 * float((mass * (vel ** 2).sum(axis=1)).sum())
     d = pos[None, :, :] - pos[:, None, :]
-    r = np.sqrt((d * d).sum(axis=-1) + SOFTENING ** 2)
+    r = np.sqrt((d * d).sum(axis=-1) + (soft2[:, None] + soft2[None, :]) / 2)
     iu = np.triu_indices(len(real), k=1)
     pe = -float((G * mass[:, None] * mass[None, :] / r)[iu].sum())
     p = (vel * mass[:, None]).sum(axis=0)

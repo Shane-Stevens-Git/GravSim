@@ -35,7 +35,7 @@ class Body:
     _glow_cache = {}
 
     def __init__(self, pos, mass, radius, color, vel=(0, 0), fixed=False, kind="body",
-                 name="Body", particle=False):
+                 name="Body", particle=False, soft=SOFTENING, absorbs=True):
         self.pos = pygame.Vector2(pos)
         self.vel = pygame.Vector2(vel)
         self.mass = float(mass)
@@ -47,6 +47,12 @@ class Body:
         # A "test particle" (belt asteroid, galaxy star) feels gravity but exerts
         # none, and never collides with other particles - see physics.accelerations.
         self.particle = particle
+        # Gravity softening length (px). Galaxy cores use a large one: their
+        # mass is spread out, so their pull levels off close in.
+        self.soft = soft
+        # False: test particles pass through instead of being absorbed (galaxy
+        # cores - real stars almost never hit the central black hole).
+        self.absorbs = absorbs
         self.trail = deque(maxlen=PARTICLE_TRAIL_LENGTH if particle else TRAIL_LENGTH)
 
     @property

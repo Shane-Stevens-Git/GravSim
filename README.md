@@ -54,10 +54,15 @@ python main.py
 | Figure-eight | Three equal stars sharing one figure-8 path. Marginally stable - it eventually breaks up. |
 | Asteroid belt | 300 test-particle asteroids; the giant's 2:1 resonance stirs up the middle of the belt (try 8x). |
 | Lagrange points | Asteroids at L1-L5. L4/L5 (green) hold them in tadpole loops; L1-L3 (amber) let them drift. Follow the giant (click it, G) to see the tadpoles. |
+| Galaxy collision | 2,300 stars in two disk galaxies on a close, bound fly-by: tidal tails, bridges, stolen stars; the cores come back and merge. Try 4x. |
 
-**Test particles:** belt asteroids and Lagrange asteroids feel gravity but
-exert none and never collide with each other (like real asteroids, whose pull
-on each other is negligible). This also makes hundreds of them cheap.
+**Test particles:** belt asteroids, Lagrange asteroids and galaxy stars feel
+gravity but exert none and never collide with each other (like real
+asteroids/stars, whose pull on each other is negligible here). Gravity then
+costs particles x massive bodies instead of everything squared, so thousands
+of particles run in real time; above 400 particles they're drawn as dots and
+skip trails. Galaxy cores are softened (their mass is spread out) and let
+stars pass through instead of swallowing them.
 
 R restarts the current scene (or reloads the last scene file).
 

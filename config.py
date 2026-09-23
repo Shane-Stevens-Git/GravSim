@@ -76,3 +76,8 @@ FIELD_LOG_RANGE = 2.2       # decades of depth shown before fading to transparen
 # --- Energy graph (E) ---------------------------------------------------------------
 ENERGY_SAMPLE = 0.1         # s of sim time between samples
 ENERGY_WINDOW = 30          # s of history shown
+
+# --- Many-body performance ------------------------------------------------------
+GALAXY_STARS = (1400, 900)  # test-particle stars in the two galaxies
+GALAXY_CORE_SOFT = 15.0     # px softening of the galaxy cores
+PARTICLE_TRAIL_LIMIT = 400  # above this many particles, particles don't draw trails

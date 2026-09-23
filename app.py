@@ -13,7 +13,7 @@ from history import History
 from physics import (circular_speed, dominant_body, orbit_info, orbit_points,
                      orbital_elements, predict_path, simulate, strongest_pull_at,
                      system_energy)
-from render import draw_arrow, make_starfield
+from render import draw_arrow, draw_points, make_starfield
 from scenes import (QUICKSAVE, SCENARIOS, ask_path, lagrange_points, load_file,
                     place_in_orbit, ring_around, save_file, to_dict)
 
@@ -48,6 +48,7 @@ class App:
         self.lagrange = None        # (primary, secondary) whose L-points are marked
         self.show_lagrange = False
         self.toast = None           # (text, expiry in ms)
+        self.n_particles = 0
         self.history = History()    # rewind buffer
         self.rewinding = False      # Z held
         self.orbit_tool = False     # O: a click places a body on a circular orbit
@@ -233,10 +234,18 @@ class App:
         i = self.speed_idx + delta
         self.speed_idx = i % n if wrap else min(max(i, 0), n - 1)
 
+    @property
+    def crowded(self):
+        """Lots of test particles: draw them as dots, skip their trails."""
+        return self.n_particles > PARTICLE_TRAIL_LIMIT
+
     def body_at(self, screen_pos):
         """Topmost body under a screen position (with a few px of slack)."""
         best, best_d = None, None
+        crowded = self.crowded
         for b in self.bodies:
+            if crowded and b.particle:
+                continue
             p = self.view.to_screen(b.pos)
             reach = max(b.radius * self.view.zoom, 6) + 4
             d = p.distance_to(screen_pos)
@@ -585,12 +594,16 @@ class App:
                        if b.fixed or b is self.sun or b is self.target
                        or b.pos.distance_to(self.view.center) < cull]
         self.after_removals()
+        self.n_particles = sum(1 for b in self.bodies if b.particle)
         if self.following:
             self.view.center = pygame.Vector2(self.target.pos)
 
         if self.show_trails and advancing:
             target, following = self.target, self.following
+            crowded = self.crowded
             for b in self.bodies:
+                if crowded and b.particle:
+                    continue
                 # While following, other trails are stored relative to the target
                 # (so orbits draw as clean loops); the target's own trail stays in
                 # world coordinates to show its path through space.
@@ -649,12 +662,19 @@ class App:
         screen.blit(self.background, (0, 0))
         if self.show_field:
             self.field.draw(screen, self.bodies, view)
+        crowded = self.crowded
         if self.show_trails:
             for b in self.bodies:
+                if crowded and b.particle:
+                    continue
                 rel = following and b is not target
                 b.draw_trail(screen, view, (target.pos.x, target.pos.y) if rel else (0.0, 0.0))
+        dots = crowded and view.zoom < 2.5
+        if dots:
+            draw_points(screen, [b for b in self.bodies if b.particle], view)
         for b in self.bodies:
-            b.draw(screen, view)
+            if not (dots and b.particle):
+                b.draw(screen, view)
         if self.show_lagrange and self.lagrange:
             pts = lagrange_points(*self.lagrange)
             hud.draw_lagrange(screen, {k: view.to_screen(p) for k, p in pts.items()})

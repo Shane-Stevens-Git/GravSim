@@ -31,7 +31,7 @@ class History:
         self.next_time = sim_time + REWIND_INTERVAL
         self.snaps.append((sim_time, sun, target, [
             (b, b.pos.x, b.pos.y, b.vel.x, b.vel.y, b.mass, b.radius, b.color,
-             b.fixed, b.kind, b.particle)
+             b.fixed, b.kind, b.particle, b.soft)
             for b in bodies]))
 
     def rewind(self):
@@ -41,11 +41,11 @@ class History:
             return None
         sim_time, sun, target, state = self.snaps.pop()
         bodies = []
-        for (b, px, py, vx, vy, mass, radius, color, fixed, kind, particle) in state:
+        for (b, px, py, vx, vy, mass, radius, color, fixed, kind, particle, soft) in state:
             b.pos.update(px, py)
             b.vel.update(vx, vy)
             b.mass, b.radius, b.color = mass, radius, color
-            b.fixed, b.kind, b.particle = fixed, kind, particle
+            b.fixed, b.kind, b.particle, b.soft = fixed, kind, particle, soft
             bodies.append(b)
         self.next_time = sim_time          # record again from here on
         return sim_time, bodies, sun, target

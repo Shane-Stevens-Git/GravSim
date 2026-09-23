@@ -164,6 +164,61 @@ def lagrange(sun_cfg, sun_fixed=False):
     return scene(bodies, lagrange=(0, 1), zoom=1.0)
 
 
+def galaxy_collision(sun_cfg=None, sun_fixed=False, seed=11):
+    """Two disk galaxies on a close, bound fly-by, in the spirit of Toomre &
+    Toomre (1972): each galaxy is a heavy core plus a disk of test-particle
+    stars. Tides from the passing core fling out long tails and bridges;
+    the cores swing back and eventually merge."""
+    rng = random.Random(seed)
+    m1, m2 = 20_000, 12_000
+    total = m1 + m2
+    mu = G * total
+    dist, peri = 750.0, 200.0
+    # Bound encounter: start at 70% of escape speed, so after the first pass
+    # the galaxies swing back (~30 s later) and eventually merge. Solve for
+    # the sideways offset (impact parameter b) that gives closest approach `peri`.
+    v = 0.7 * math.sqrt(2 * mu / dist)
+    energy = v * v / 2 - mu / dist
+    a_axis = -mu / (2 * energy)
+
+    def periapsis(b):
+        e = math.sqrt(max(0.0, 1 + 2 * energy * (b * v) ** 2 / mu ** 2))
+        return a_axis * (1 - e)
+
+    lo, hi = 0.0, dist
+    for _ in range(60):                     # periapsis grows with b: bisect
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if periapsis(mid) < peri else (lo, mid)
+    sin_a = lo / dist
+    rel_pos = pygame.Vector2(dist, 0)                           # core2 - core1
+    rel_vel = pygame.Vector2(-v * math.sqrt(1 - sin_a ** 2), -v * sin_a)
+    rel_pos, rel_vel = rel_pos.rotate(-20), rel_vel.rotate(-20)
+    # Cores: supermassive black holes with softened gravity (a galaxy's
+    # central mass is spread out), so stars passing close aren't slingshot away.
+    c1 = Body(CENTER - rel_pos * (m2 / total), m1, 4, (0, 0, 0),
+              vel=-rel_vel * (m2 / total), kind="blackhole", name="Core A", soft=GALAXY_CORE_SOFT,
+              absorbs=False)
+    c2 = Body(CENTER + rel_pos * (m1 / total), m2, 3, (0, 0, 0),
+              vel=rel_vel * (m1 / total), kind="blackhole", name="Core B", soft=GALAXY_CORE_SOFT,
+              absorbs=False)
+    bodies = [c1, c2]
+    # Disks rotate the same way as the encounter (prograde) - that's what
+    # makes the dramatic tails.
+    spin_ccw = (rel_pos.x * rel_vel.y - rel_pos.y * rel_vel.x) < 0
+    for core, n, r_max, color in ((c1, GALAXY_STARS[0], 160, (170, 200, 255)),
+                                  (c2, GALAXY_STARS[1], 125, (255, 220, 160))):
+        eps2 = (core.soft ** 2 + SOFTENING ** 2) / 2          # pair softening
+        for k in range(n):
+            d = 22 + (r_max - 22) * math.sqrt(rng.random())      # uniform over the disk
+            offset = pygame.Vector2(d, 0).rotate(rng.uniform(0, 360))
+            # circular speed for the *softened* pull: v^2 = G M r^2 / (r^2 + eps^2)^1.5
+            v = math.sqrt(G * core.mass * d * d / (d * d + eps2) ** 1.5)
+            tangent = offset.rotate(-90 if spin_ccw else 90).normalize()
+            bodies.append(Body(core.pos + offset, 0.001, 1, color, vel=core.vel + tangent * v,
+                               name=f"{core.name[-1]} star", particle=True))
+    return scene(bodies, sun=0, target=None, zoom=0.5)
+
+
 SCENARIOS = [
     ("Sun & planet", "The default: one planet on an elliptical orbit.", sun_and_planet),
     ("Inner solar system", "Four planets, and a moon around Earth.", inner_solar_system),
@@ -171,6 +226,7 @@ SCENARIOS = [
     ("Figure-eight", "Three stars chasing each other along a figure-8.", figure_eight),
     ("Asteroid belt", "300 asteroids and a giant that stirs them up.", asteroid_belt),
     ("Lagrange points", "Asteroids parked at L1-L5 of a sun-giant pair.", lagrange),
+    ("Galaxy collision", "Two disk galaxies fly past and tear out tidal tails.", galaxy_collision),
 ]
 
 
@@ -255,7 +311,8 @@ def to_dict(sc, extra=None):
         "bodies": [{
             "name": b.name, "pos": [b.pos.x, b.pos.y], "vel": [b.vel.x, b.vel.y],
             "mass": b.mass, "radius": b.radius, "color": list(b.color),
-            "fixed": b.fixed, "kind": b.kind, "particle": b.particle,
+            "fixed": b.fixed, "kind": b.kind, "particle": b.particle, "soft": b.soft,
+            "absorbs": b.absorbs,
         } for b in bodies],
     }
     data.update(extra or {})
@@ -267,7 +324,8 @@ def from_dict(data):
         raise ValueError("not a GravSim scene file")
     bodies = [Body(d["pos"], d["mass"], d["radius"], d["color"], vel=d["vel"],
                    fixed=d.get("fixed", False), kind=d.get("kind", "body"),
-                   name=d.get("name", "Body"), particle=d.get("particle", False))
+                   name=d.get("name", "Body"), particle=d.get("particle", False),
+                   soft=d.get("soft", SOFTENING), absorbs=d.get("absorbs", True))
               for d in data["bodies"]]
     sc = scene(bodies, sun=data.get("sun", 0) or 0, target=data.get("target"),
                center=data.get("center"), zoom=data.get("zoom", 1.0),
