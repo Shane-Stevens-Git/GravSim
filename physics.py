@@ -1,9 +1,12 @@
 """Gravity, integration, collisions and orbit math. No drawing here."""
 import math
 
+import random
+
 import numpy as np
 import pygame
 
+from body import Body
 from config import *
 
 
@@ -118,9 +121,15 @@ def bounce(a, b):
         b.pos += n * (overlap * inv_b / (inv_a + inv_b))
 
 
-def simulate(bodies, dt, steps, mode):
-    """Advance `steps` fixed steps, handling collisions. Mutates `bodies`."""
+def simulate(bodies, dt, steps, mode, events=None):
+    """Advance `steps` fixed steps, handling collisions. Mutates `bodies`.
+
+    mode: "merge", "shatter" (merge, but fast impacts fragment) or "bounce".
+    If `events` is a list, (kind, position, strength) tuples are appended
+    for each collision - used for flashes and sounds.
+    """
     done = 0
+    new_bodies = []
     while done < steps and bodies:
         pos, vel, mass, movable = pack(bodies)
         radii = np.array([b.radius for b in bodies], dtype=float)
@@ -145,16 +154,30 @@ def simulate(bodies, dt, steps, mode):
             if i in gone or j in gone:
                 continue
             a, b = bodies[i], bodies[j]
-            if mode == "merge":
+            speed = (a.vel - b.vel).length()
+            if mode in ("merge", "shatter"):
                 if b.mass > a.mass:          # heavier body survives
                     a, b = b, a
                     i, j = j, i
-                merge(a, b)
+                point = pygame.Vector2(a.pos)
+                if mode == "shatter" and should_shatter(a, b):
+                    debris = shatter(a, b)
+                    new_bodies.extend(debris)
+                    kind = "shatter"
+                else:
+                    merge(a, b)
+                    kind = "merge"
                 gone.add(j)
+                if events is not None and not (a.particle or b.particle):
+                    events.append((kind, point, b.mass * speed * speed))
             else:
                 bounce(a, b)
-        if gone:
-            bodies[:] = [b for k, b in enumerate(bodies) if k not in gone]
+                if events is not None and not (a.particle or b.particle):
+                    events.append(("bounce", (a.pos + b.pos) / 2,
+                                   min(a.mass, b.mass) * speed * speed))
+        if gone or new_bodies:
+            bodies[:] = [b for k, b in enumerate(bodies) if k not in gone] + new_bodies
+            new_bodies = []
 
 
 def predict_path(bodies, start, vel0, frame_body=None, test_radius=0):
@@ -318,3 +341,85 @@ def system_energy(bodies):
     pe = -float((G * mass[:, None] * mass[None, :] / r)[iu].sum())
     p = (vel * mass[:, None]).sum(axis=0)
     return ke, pe, pygame.Vector2(float(p[0]), float(p[1]))
+
+
+
+# --- Destruction (SHATTER mode) ------------------------------------------------------
+def should_shatter(a, b):
+    """Impacts much faster than the pair's mutual escape speed fragment
+    instead of merging. Pinned bodies and test particles always just merge."""
+    if a.fixed or b.fixed or a.particle or b.particle:
+        return False
+    v_esc = math.sqrt(2 * G * (a.mass + b.mass) / (a.radius + b.radius))
+    return (a.vel - b.vel).length() > SHATTER_SPEED * v_esc
+
+
+def shatter(big, small, rng=random):
+    """Fragmenting impact. `big` survives as the largest remnant (updated in
+    place); returns the debris as test particles. Mass and momentum are
+    conserved exactly: the remnant's velocity is whatever balances the debris."""
+    total = big.mass + small.mass
+    momentum = big.vel * big.mass + small.vel * small.mass
+    v_cm = momentum / total
+    v_esc = math.sqrt(2 * G * total / (big.radius + small.radius))
+    excess = (big.vel - small.vel).length() / (SHATTER_SPEED * v_esc)   # > 1
+    keep = min(max(1.1 - 0.35 * excess, 0.2), 0.85)     # harder hit -> smaller remnant
+    color = tuple(int((ca * big.mass + cb * small.mass) / total)
+                  for ca, cb in zip(big.color, small.color))
+    center = (big.pos * big.mass + small.pos * small.mass) / total
+    normal = small.pos - big.pos
+    normal = normal.normalize() if normal.length() > 1e-9 else pygame.Vector2(1, 0)
+    r_left = max(2, round(((big.radius ** 3 + small.radius ** 3) * keep) ** (1 / 3)))
+
+    debris_mass = total * (1 - keep)
+    n = int(min(max(debris_mass / (total * 0.02), SHATTER_MIN_PIECES), SHATTER_MAX_PIECES))
+    pieces, p_debris = [], pygame.Vector2()
+    for k in range(n):
+        direction = normal.rotate(rng.uniform(-75, 75))       # spray from the impact side
+        v = v_cm + direction * v_esc * rng.uniform(0.5, 1.3)
+        piece = Body(center + direction * (r_left + 3 + rng.uniform(0, 4)), debris_mass / n,
+                     rng.choice((1, 1, 2)), color, vel=v, name="Debris", particle=True)
+        pieces.append(piece)
+        p_debris += v * piece.mass
+
+    big.mass = total * keep
+    big.radius = r_left
+    big.color = color
+    big.pos = center
+    big.vel = (momentum - p_debris) / big.mass
+    return pieces
+
+
+def roche_limit(body, primary):
+    """Distance inside which `primary`'s tides tear `body` apart:
+    d = k * r_body * (M / m)^(1/3) (k = 2.44 for a fluid body; we use a
+    smaller k since sandbox densities are arbitrary)."""
+    return ROCHE_COEFF * body.radius * (primary.mass / body.mass) ** (1 / 3)
+
+
+def tidal_victims(bodies):
+    """(victim, primary) pairs where a body is inside the Roche limit of the
+    heavier body it orbits. Only real, reasonably sized bodies can break up."""
+    out = []
+    for b in bodies:
+        if b.particle or b.fixed or b.radius < ROCHE_MIN_RADIUS:
+            continue
+        primary = dominant_body(b, bodies)
+        if (primary is not None and primary.mass > 10 * b.mass
+                and b.pos.distance_to(primary.pos) < roche_limit(b, primary)):
+            out.append((b, primary))
+    return out
+
+
+def tidal_disrupt(body, rng=random):
+    """Replace `body` with a clump of debris particles occupying its volume,
+    each moving with the body's velocity plus a little spread. The primary's
+    tides then stretch the clump into a stream along the orbit."""
+    n = int(min(max(body.radius * 4, 12), 40))
+    pieces = []
+    for k in range(n):
+        offset = pygame.Vector2(rng.uniform(0, body.radius), 0).rotate(rng.uniform(0, 360))
+        jitter = pygame.Vector2(rng.gauss(0, 1), rng.gauss(0, 1)) * body.vel.length() * 0.01
+        pieces.append(Body(body.pos + offset, body.mass / n, rng.choice((1, 1, 2)),
+                           body.color, vel=body.vel + jitter, name="Debris", particle=True))
+    return pieces

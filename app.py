@@ -12,7 +12,7 @@ from field import FieldOverlay
 from history import History
 from physics import (circular_speed, dominant_body, orbit_info, orbit_points,
                      orbital_elements, predict_path, simulate, strongest_pull_at,
-                     system_energy)
+                     system_energy, tidal_disrupt, tidal_victims)
 from render import draw_arrow, draw_points, make_starfield
 from scenes import (QUICKSAVE, SCENARIOS, ask_path, lagrange_points, load_file,
                     place_in_orbit, ring_around, save_file, to_dict)
@@ -49,6 +49,7 @@ class App:
         self.show_lagrange = False
         self.toast = None           # (text, expiry in ms)
         self.n_particles = 0
+        self.events = []            # collisions this frame: (kind, pos, strength)
         self.history = History()    # rewind buffer
         self.rewinding = False      # Z held
         self.orbit_tool = False     # O: a click places a body on a circular orbit
@@ -384,7 +385,8 @@ class App:
             self.show_trails = not self.show_trails
             self.clear_trails()
         elif k == pygame.K_m:
-            self.mode = "bounce" if self.mode == "merge" else "merge"
+            modes = COLLISION_MODES
+            self.mode = modes[(modes.index(self.mode) + 1) % len(modes)]
         elif k == pygame.K_v:
             self.follow = not self.follow
             self.clear_trails()                 # old trails were in the old frame
@@ -494,6 +496,15 @@ class App:
         self.bodies.extend(ring)
         self.notify(msg)
 
+    def tidal_check(self):
+        """SHATTER mode: bodies inside a heavier body's Roche limit break up."""
+        for victim, primary in tidal_victims(self.bodies):
+            debris = tidal_disrupt(victim)
+            self.bodies = [b for b in self.bodies if b is not victim] + debris
+            self.events.append(("tidal", pygame.Vector2(victim.pos), victim.mass))
+            self.notify(f"{victim.name} was torn apart by {primary.name}'s tides")
+        self.after_removals()
+
     def reset_energy_log(self):
         self.energy_log.clear()
         self.next_energy = self.sim_time
@@ -582,7 +593,10 @@ class App:
             self.accumulator -= steps * PHYSICS_DT
             if steps > MAX_STEPS_PER_FRAME:     # can't keep up: slow down, don't freeze
                 steps, self.accumulator = MAX_STEPS_PER_FRAME, 0.0
-            simulate(self.bodies, PHYSICS_DT, steps, self.mode)
+            self.events = []
+            simulate(self.bodies, PHYSICS_DT, steps, self.mode, self.events)
+            if self.mode == "shatter":
+                self.tidal_check()
             self.sim_time += steps * PHYSICS_DT
             self.history.record(self.sim_time, self.bodies, self.sun, self.target)
             if self.show_energy:

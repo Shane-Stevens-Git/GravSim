@@ -26,7 +26,7 @@ python main.py
 | **[ / ]**, **Del** | Lower / raise the selected body's mass (x1.5), delete it |
 | **Ctrl + scroll**, **+ / -** | Zoom in / out (0 resets) |
 | **Middle-drag** | Pan the view (switches the camera to fixed) |
-| **M / L / T / V** | Collisions merge/bounce, trails, aim preview, camera follow (or click the rows) |
+| **M / L / T / V** | Collision mode (merge / shatter / bounce), trails, aim preview, camera follow (or click the rows) |
 | **S** | Show / hide the sun panel |
 | **P** | Scenes menu (then 1-6 or click to load a preset) |
 | **O** | Orbit tool: a click places the next body on a circular orbit around whatever pulls hardest there (Shift+click: other direction) |
@@ -43,6 +43,16 @@ python main.py
 | **Space** / **N** | Pause / step one frame |
 | **,** / **.** | Slower / faster (0.25x to 8x, or click the Speed row) |
 | **Esc** | Quit |
+
+### Collision modes (M)
+
+- **Merge** - bodies that touch combine; mass, momentum and volume are kept.
+- **Shatter** - like merge, but impacts faster than 2x the pair's mutual
+  escape speed fragment: the bigger body keeps a remnant (smaller for harder
+  hits) and the rest sprays out as debris. Bodies that stray inside a heavier
+  body's **Roche limit** are torn apart by tides into a debris stream. Try
+  throwing a planet so it just grazes the sun.
+- **Bounce** - elastic-ish bounces (restitution 0.8).
 
 ### Scenes
 

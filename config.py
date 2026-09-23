@@ -18,6 +18,7 @@ REWIND_STEPS_PER_FRAME = 1  # snapshots popped per frame while Z is held (0.2 s 
 MAX_STEPS_PER_FRAME = 96    # safety cap so high speeds can't freeze the app
 SOFTENING = 1.5             # px; avoids infinite force if r -> 0 (kept small so close orbits stay accurate)
 CULL_DISTANCE = 4000        # px from view center; farther bodies are deleted
+COLLISION_MODES = ("merge", "shatter", "bounce")   # M cycles through these
 RESTITUTION = 0.8           # bounciness in bounce mode (1 = perfectly elastic)
 
 # --- Launch controls -----------------------------------------------------------
@@ -81,3 +82,10 @@ ENERGY_WINDOW = 30          # s of history shown
 GALAXY_STARS = (1400, 900)  # test-particle stars in the two galaxies
 GALAXY_CORE_SOFT = 15.0     # px softening of the galaxy cores
 PARTICLE_TRAIL_LIMIT = 400  # above this many particles, particles don't draw trails
+
+# --- Destruction (SHATTER collision mode) -----------------------------------------
+SHATTER_SPEED = 2.0         # impacts faster than this x mutual escape speed fragment
+SHATTER_MIN_PIECES = 4
+SHATTER_MAX_PIECES = 16
+ROCHE_COEFF = 0.9           # Roche limit = k * r * (M/m)^(1/3); real fluid bodies: 2.44
+ROCHE_MIN_RADIUS = 3        # smaller bodies are never tidally disrupted
