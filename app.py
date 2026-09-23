@@ -8,11 +8,12 @@ import pygame
 import ui
 from body import Body, View
 from config import *
+from history import History
 from physics import (circular_speed, dominant_body, orbit_info, orbit_points,
-                     orbital_elements, predict_path, simulate)
+                     orbital_elements, predict_path, simulate, strongest_pull_at)
 from render import draw_arrow, make_starfield
 from scenes import (QUICKSAVE, SCENARIOS, ask_path, lagrange_points, load_file,
-                    save_file, to_dict)
+                    place_in_orbit, ring_around, save_file, to_dict)
 
 
 class App:
@@ -45,6 +46,9 @@ class App:
         self.lagrange = None        # (primary, secondary) whose L-points are marked
         self.show_lagrange = False
         self.toast = None           # (text, expiry in ms)
+        self.history = History()    # rewind buffer
+        self.rewinding = False      # Z held
+        self.orbit_tool = False     # O: a click places a body on a circular orbit
         self.scenario_idx = 0
         self.reset_source = ("scenario", 0)
         self.start_scenario(0)
@@ -88,6 +92,7 @@ class App:
         self.mode = sc["mode"]
         self.sim_time = sc.get("sim_time", 0.0)
         self.accumulator = 0.0
+        self.history.clear(self.sim_time)
         self.clear_trails()
 
     def sun_settings(self):
@@ -327,6 +332,12 @@ class App:
             self.notify(f"Scene: {self.start_scenario(k - pygame.K_1)}")
         elif k == pygame.K_k:
             self.toggle_lagrange()
+        elif k == pygame.K_z:
+            self.rewinding = True
+        elif k == pygame.K_o:
+            self.orbit_tool = not self.orbit_tool
+        elif k == pygame.K_b:
+            self.add_ring()
         elif k == pygame.K_SPACE:
             self.paused = not self.paused
         elif k == pygame.K_n:                   # step one frame (pauses first)
@@ -406,6 +417,10 @@ class App:
                 self.remove_body(self.selection)
         elif kind == "sel_mass":
             self.scale_selection_mass(arg)
+        elif kind == "sel_ring":
+            self.add_ring()
+        elif kind == "rewind":
+            self.rewind(arg)
         elif kind == "scene":
             self.notify(f"Scene: {self.start_scenario(arg)}")
         elif kind == "save":
@@ -424,12 +439,51 @@ class App:
 
     def release(self, pos):
         """Left button released after pressing on empty space: a short click
-        selects (or deselects); a real drag throws."""
+        selects a body (or, with the orbit tool, places one in orbit, or
+        deselects); a real drag throws."""
         if pygame.Vector2(pos).distance_to(self.drag_start) < CLICK_SLOP:
-            self.selection = self.body_at(pos)
             self.drag_start = None
+            hit = self.body_at(pos)
+            if hit is None and self.orbit_tool:
+                self.place_orbiting(pos)
+            else:
+                self.selection = hit
         else:
             self.throw(pos)
+
+    def place_orbiting(self, screen_pos):
+        """Orbit tool: put the next body on a circular orbit around whatever
+        pulls hardest at the click (Shift+click: the other direction)."""
+        name, m, r, color = self.preset_body()
+        reverse = bool(pygame.key.get_mods() & pygame.KMOD_SHIFT)
+        body, primary = place_in_orbit(self.view.to_world(screen_pos), self.bodies,
+                                       m, r, color, name, reverse)
+        if body is None:
+            self.notify("Too close - that would be inside it")
+        else:
+            self.bodies.append(body)
+
+    def add_ring(self):
+        center = self.selection or (self.target if self.following else self.sun)
+        if center not in self.bodies:
+            return
+        ring, msg = ring_around(center, self.bodies)
+        self.bodies.extend(ring)
+        self.notify(msg)
+
+    def rewind(self, snapshots=1):
+        """Step back `snapshots` entries in the rewind buffer."""
+        snap = None
+        for _ in range(snapshots):
+            snap = self.history.rewind() or snap
+        if snap is None:
+            return False
+        self.sim_time, self.bodies, sun, target = snap
+        self.sun, self.target = sun, target
+        self.accumulator = 0.0
+        self.after_removals()
+        self.clear_trails()
+        return True
 
     def handle_events(self):
         for event in pygame.event.get():
@@ -437,6 +491,8 @@ class App:
                 self.running = False
             elif event.type == pygame.KEYDOWN:
                 self.handle_key(event.key)
+            elif event.type == pygame.KEYUP and event.key == pygame.K_z:
+                self.rewinding = False
             elif event.type == pygame.MOUSEWHEEL:
                 mods = pygame.key.get_mods()
                 if mods & pygame.KMOD_CTRL:
@@ -472,6 +528,11 @@ class App:
 
     # --- Simulation --------------------------------------------------------------------
     def update(self, frame_time):
+        if self.rewinding:                      # hold Z: run the clock backwards
+            self.rewind(REWIND_STEPS_PER_FRAME)
+            if self.following:
+                self.view.center = pygame.Vector2(self.target.pos)
+            return
         advancing = not self.paused or self.step_request > 0
         if not self.paused:
             self.accumulator += frame_time * self.speed
@@ -485,6 +546,7 @@ class App:
                 steps, self.accumulator = MAX_STEPS_PER_FRAME, 0.0
             simulate(self.bodies, PHYSICS_DT, steps, self.mode)
             self.sim_time += steps * PHYSICS_DT
+            self.history.record(self.sim_time, self.bodies, self.sun, self.target)
 
         # Delete bodies far outside the view (farther when zoomed out)
         cull = max(CULL_DISTANCE, 2 * math.hypot(WIDTH, HEIGHT) / self.view.zoom)
@@ -528,6 +590,25 @@ class App:
         pulse = 2 * math.sin(pygame.time.get_ticks() / 250)
         r = max(sel.radius * view.zoom, 4) + 7 + pulse
         pygame.draw.circle(screen, ui.ACCENT, (round(p.x), round(p.y)), round(r), 2)
+
+    def draw_orbit_ghost(self, mouse, r, color):
+        """Orbit tool preview: the circle a click here would create."""
+        view = self.view
+        world = view.to_world(mouse)
+        primary = strongest_pull_at(world, self.bodies)
+        if primary is None:
+            return
+        c = view.to_screen(primary.pos)
+        rad = c.distance_to(mouse)
+        if rad < 2:
+            return
+        pygame.draw.circle(self.screen, [int(v * 0.5) for v in ui.GOOD],
+                           (round(c.x), round(c.y)), round(rad), 1)
+        pygame.draw.circle(self.screen, color, mouse, max(1, round(r * view.zoom)), 1)
+        reverse = pygame.key.get_mods() & pygame.KMOD_SHIFT
+        tangent = (pygame.Vector2(mouse) - c).rotate(90 if reverse else -90)
+        tangent.scale_to_length(22)
+        draw_arrow(self.screen, mouse, pygame.Vector2(mouse) + tangent, ui.GOOD)
 
     def draw(self):
         screen, view, sun, hud = self.screen, self.view, self.sun, self.hud
@@ -579,6 +660,8 @@ class App:
         elif self.drag_start is None and not hud.blocked(mouse):
             if self.body_at(mouse) is not None:         # hint: this body is clickable
                 pygame.draw.circle(screen, ui.DIM, mouse, 3)
+            elif self.orbit_tool:
+                self.draw_orbit_ghost(mouse, r, color)
             else:
                 pygame.draw.circle(screen, color, mouse, max(1, round(r * view.zoom)), 1)
 
@@ -596,6 +679,10 @@ class App:
             ("< >", "Speed", f"{self.speed:g}x", self.speed != 1, ("speed", None)),
             ("K", "Lagrange pts", "ON" if self.show_lagrange else "OFF", self.show_lagrange,
              ("key", pygame.K_k)),
+            ("O", "Orbit tool", "ON" if self.orbit_tool else "OFF", self.orbit_tool,
+             ("key", pygame.K_o)),
+            ("Z", "Rewind", f"{self.history.seconds:.0f} s", self.history.seconds > 0,
+             ("rewind", 25)),
             ("P", "Scene", (SCENARIOS[self.scenario_idx][0] if self.scenario_idx is not None
                             else "FROM FILE").upper()[:17], True, ("key", pygame.K_p)),
         ]
@@ -617,7 +704,9 @@ class App:
                          self.mass_mult, SIZE_RANGE, MASS_RANGE)
         if hud.scenes_open:
             hud.draw_scenes(screen, [(n, d) for n, d, _ in SCENARIOS], self.scenario_idx)
-        if self.paused:
+        if self.rewinding:
+            hud.draw_rewind(screen, self.sim_time, self.history.seconds)
+        elif self.paused:
             hud.draw_paused(screen)
         if self.toast and pygame.time.get_ticks() < self.toast[1]:
             hud.draw_toast(screen, self.toast[0])

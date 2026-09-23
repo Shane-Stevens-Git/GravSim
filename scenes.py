@@ -311,3 +311,35 @@ def ask_path(save):
     finally:
         root.destroy()
     return path or None
+
+
+# --- Spawn tools --------------------------------------------------------------------
+def ring_around(center, bodies, n=RING_PARTICLES, seed=None):
+    """A ring of test particles on circular orbits around `center`.
+    Returns (new particles, message). Kept inside ~40% of the Hill sphere
+    when `center` itself orbits something heavier."""
+    from physics import dominant_body, hill_radius
+    rng = random.Random(seed)
+    r_in = center.radius + 3
+    r_out = max(center.radius * 3, r_in + 40)
+    primary = dominant_body(center, bodies)
+    if primary is not None:
+        r_out = min(r_out, 0.45 * hill_radius(center, primary))
+        if r_out < r_in + 4:
+            return [], f"{center.name} is too light to hold a ring here (Hill sphere too small)"
+    ring = [orbiting(center, rng.uniform(r_in, r_out), rng.uniform(0, 360), 0.01, 1,
+                     RING_COLOR, f"{center.name} ring", screen_ccw=True, particle=True)
+            for _ in range(n)]
+    return ring, f"Added a ring of {n} particles around {center.name}"
+
+
+def place_in_orbit(point, bodies, mass, radius, color, name, reverse=False):
+    """A new body at `point` on a circular orbit around whatever pulls hardest
+    there. Returns (body or None, primary)."""
+    from physics import strongest_pull_at
+    primary = strongest_pull_at(point, bodies)
+    if primary is None or point.distance_to(primary.pos) <= primary.radius + radius:
+        return None, primary
+    offset = point - primary.pos
+    return orbiting(primary, offset.length(), math.degrees(math.atan2(offset.y, offset.x)),
+                    mass, radius, color, name, screen_ccw=not reverse), primary

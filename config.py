@@ -12,6 +12,9 @@ PHYSICS_DT = 1 / 240        # fixed physics step (s), independent of frame rate
 MAX_FRAME_TIME = 0.05       # don't try to "catch up" more than this after a stall
 TIME_SPEEDS = [0.25, 0.5, 1, 2, 4, 8]   # simulation speed choices (, and . keys)
 DEFAULT_SPEED_IDX = 2
+REWIND_INTERVAL = 0.2       # s of sim time between rewind snapshots
+REWIND_SECONDS = 60         # how much history to keep (hold Z to rewind)
+REWIND_STEPS_PER_FRAME = 1  # snapshots popped per frame while Z is held (0.2 s -> 12x speed)
 MAX_STEPS_PER_FRAME = 96    # safety cap so high speeds can't freeze the app
 SOFTENING = 1.5             # px; avoids infinite force if r -> 0 (kept small so close orbits stay accurate)
 CULL_DISTANCE = 4000        # px from view center; farther bodies are deleted
@@ -60,3 +63,7 @@ BLACK_HOLE_RING = (255, 150, 70)   # black-hole accretion ring
 # --- Camera -------------------------------------------------------------------
 ZOOM_RANGE = (0.1, 5.0)
 ZOOM_STEP = 1.15            # zoom factor per Ctrl+scroll notch or +/- press
+
+# --- Spawn tools ----------------------------------------------------------------
+RING_PARTICLES = 80         # B: particles in a ring around the selected body
+RING_COLOR = (190, 180, 160)

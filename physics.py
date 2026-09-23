@@ -263,3 +263,21 @@ def orbit_points(el, n=180, max_r=20_000):
             continue
         pts.append((r * math.cos(t + w), r * math.sin(t + w)))
     return pts
+
+
+def strongest_pull_at(point, bodies):
+    """The body whose gravity is strongest at `point` (for auto-orbit placement)."""
+    best, best_pull = None, 0.0
+    for b in bodies:
+        pull = b.mass / max((b.pos - point).length_squared(), 1e-6)
+        if pull > best_pull:
+            best, best_pull = b, pull
+    return best
+
+
+def hill_radius(body, primary):
+    """Rough radius inside which `body` can hold its own moons against
+    `primary`'s tides: r_H = d * (m / 3M)^(1/3). Stable orbits sit well
+    inside it (about half)."""
+    d = body.pos.distance_to(primary.pos)
+    return d * (body.mass / (3 * primary.mass)) ** (1 / 3)

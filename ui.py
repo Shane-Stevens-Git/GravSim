@@ -251,6 +251,9 @@ class HUD:
         ("S", "Sun panel"),
         ("P", "Scenes menu"),
         ("K", "Lagrange points"),
+        ("O", "Orbit tool (click = orbit)"),
+        ("B", "Ring around selected"),
+        ("Z (hold)", "Rewind"),
         ("Ctrl+S / O", "Save / load scene"),
         ("F5 / F9", "Quick save / load"),
         ("Space", "Pause / resume"),
@@ -293,7 +296,7 @@ class HUD:
     def draw_inspector(self, surface, y, info):
         """Details for the selected body. info: name, color, accent, kind, mass,
         primary (name or None), speed, dist, el (orbital elements or None), following."""
-        w = 280
+        w = 300
         rect = self.panel(surface, (self.w - PAD - w, y, w, 268))
         x, ty = rect.x + 14, rect.y + 12
 
@@ -345,10 +348,12 @@ class HUD:
         self.button(surface, (rect.right - 14 - 28, ty, 28, 24), "+", ("sel_mass", 1.5))
         ty += 34
 
-        bw = (w - 28 - 10) // 2
-        self.button(surface, (x, ty, bw, 28), "Following" if info["following"] else "Follow",
+        bw = (w - 28 - 16) // 3
+        self.button(surface, (x, ty, bw, 28), "Unfollow" if info["following"] else "Follow",
                     ("sel_follow", None), key="G", on=info["following"])
-        self.button(surface, (x + bw + 10, ty, bw, 28), "Delete", ("sel_delete", None), key="Del")
+        self.button(surface, (x + bw + 8, ty, bw, 28), "Ring", ("sel_ring", None), key="B")
+        self.button(surface, (x + 2 * (bw + 8), ty, bw, 28), "Delete", ("sel_delete", None),
+                    key="Del")
         return rect
 
     # --- Scenes menu (modal) -------------------------------------------------------------
@@ -473,6 +478,19 @@ class HUD:
             txt = label if orbit["escape"] or orbit["impact"] else f"{label}  e={orbit['e']:.2f}"
             self.text(surface, self.f_label, txt, color, (tx + 14, ty))
         return color
+
+    def draw_rewind(self, surface, sim_time, seconds_left):
+        img = self.f_title.render("REWINDING", True, TEXT)
+        hint = self.f_num.render(f"t = {sim_time:.1f} s", True, DIM)
+        w = img.get_width() + hint.get_width() + 140
+        rect = self.panel(surface, ((self.w - w) // 2, PAD, w, 34), border=WARN, block=False)
+        # little "<<" icon
+        x, cy = rect.x + 14, rect.centery
+        for dx in (0, 8):
+            pygame.draw.polygon(surface, WARN, [(x + dx + 8, cy - 6), (x + dx, cy), (x + dx + 8, cy + 6)])
+        surface.blit(img, (x + 24, rect.y + 8))
+        surface.blit(hint, (x + 34 + img.get_width(), rect.y + 9))
+        self.bar(surface, (rect.right - 76, cy - 2, 62, 4), seconds_left / 60, WARN)
 
     def draw_paused(self, surface):
         img = self.f_title.render("PAUSED", True, TEXT)
