@@ -327,6 +327,7 @@ class App:
         if craft is None or craft.pilot is None:
             return
         self.pick = None
+        craft.pilot.itinerary = []              # a manual command ends any tour
         if mode in ("transfer", "follow"):
             self.pick = (craft, mode)
             craft.pilot.status = ("Click the body to transfer to" if mode == "transfer"

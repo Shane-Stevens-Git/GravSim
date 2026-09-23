@@ -12,6 +12,10 @@ Autopilot modes
             window, burn, coast, then rendezvous (switches to follow)
   follow    rendezvous with a body and keep station just beside it
   manual    you fly it: Up = thrust, Down = brake, Left/Right = turn
+
+Tours: give a craft an `itinerary` (list of bodies) and a `dwell` time and
+it orbits each body for `dwell` seconds, then flies to the next one
+(rendezvous, enter orbit, repeat), looping forever.
 """
 import math
 
@@ -33,6 +37,10 @@ class Autopilot:
         self.coast_until = 0.0
         self.status = "Autopilot off"
         self.dv = 0.0         # delta-v used so far (px/s)
+        self.itinerary = []   # tour: bodies to visit in turn (loops)
+        self.leg = 0          # tour: index of the current stop
+        self.dwell = 8.0      # tour: seconds to orbit each stop
+        self.hold_time = 0.0  # time spent in the current hold
         self.r2 = None        # transfer: target orbit radius at burn time
         self.burn_left = None # transfer: velocity change still to deliver
         self.coast_start_r = None
@@ -45,6 +53,13 @@ class Autopilot:
         self.hold = hold
         self.phase = "wait" if mode == "transfer" else None
         self.prev_diff = None
+        self.hold_time = 0.0
+
+    def start_tour(self, stops, dwell, first_leg=0, time_in=0.0):
+        """Orbit stops[first_leg] now (already there), then tour the rest."""
+        self.itinerary, self.dwell, self.leg = list(stops), dwell, first_leg
+        self.set_mode("hold", hold=("orbit", self.itinerary[first_leg], None))
+        self.hold_time = time_in
 
 
 def make_craft(body):
@@ -94,6 +109,8 @@ def steer(craft, bodies, sim_dt, real_dt, keys):
     except _Lost as e:
         p.set_mode("off")
         p.status = str(e)                       # stays until another mode is picked
+    if p.itinerary:
+        _tour_step(craft, bodies, sim_dt)
     craft.thrust = thrust
     if thrust.length() > 0.3 and p.mode != "manual":
         craft.heading = math.degrees(math.atan2(thrust.y, thrust.x))
@@ -107,6 +124,27 @@ class _Lost(Exception):
 def _need(body, bodies, what):
     if body is None or body not in bodies:
         raise _Lost(f"{what} is gone - autopilot off")
+
+
+def _tour_step(craft, bodies, sim_dt):
+    """Tours: after `dwell` seconds orbiting a stop, head for the next one."""
+    p = craft.pilot
+    p.itinerary = [b for b in p.itinerary if b in bodies]
+    if len(p.itinerary) < 2:
+        p.itinerary = []
+        return
+    here = p.hold[1] if p.mode == "hold" and p.hold and p.hold[0] == "orbit" else None
+    if here is None or here not in p.itinerary:
+        return
+    p.leg = p.itinerary.index(here)
+    p.hold_time += sim_dt
+    nxt = p.itinerary[(p.leg + 1) % len(p.itinerary)]
+    left = p.dwell - p.hold_time
+    if left <= 0:
+        p.set_mode("follow", target=nxt)
+        p.status = f"Leaving {here.name} for {nxt.name}"
+    else:
+        p.status = f"Orbiting {here.name} - off to {nxt.name} in {left:.0f} s"
 
 
 def _off(craft, bodies, sim_dt, real_dt, keys):
@@ -145,6 +183,9 @@ def _hold(craft, bodies, sim_dt, real_dt, keys):
     _need(prim, bodies, prim.name if prim else "Primary")
     rel = craft.pos - prim.pos
     r = max(rel.length(), 1e-6)
+    if radius is None:                         # "whatever distance we're at now"
+        radius = r
+        p.hold = ("orbit", prim, r)
     rhat = rel / r
     rel_v = craft.vel - prim.vel
     s = _orbit_sign(rel, rel_v)
@@ -170,9 +211,11 @@ def _follow(craft, bodies, sim_dt, real_dt, keys):
     away = craft.pos - t.pos
     dist = away.length()
     direction = away / dist if dist > 1e-6 else pygame.Vector2(1, 0)
-    standoff = t.radius + craft.radius + 8
+    # Touring ships park a little farther out, leaving room to manoeuvre
+    standoff = t.radius + craft.radius + (TOUR_ORBIT_GAP if p.itinerary else 8)
     err = t.pos + direction * standoff - craft.pos
     v_des = t.vel + _limit(err * FOLLOW_KP, FOLLOW_MAX_SPEED)
+    v_des = _avoid(craft, v_des, bodies, t)
     # Cancel the difference in gravity between us and the target, so we can
     # hover beside it instead of falling onto it.
     feedforward = gravity_at(t.pos, bodies, (t, craft)) - gravity_at(craft.pos, bodies, (craft,))
@@ -181,9 +224,10 @@ def _follow(craft, bodies, sim_dt, real_dt, keys):
     if err.length() < 4 and rel_speed < 3:
         # Matched. Settle into an orbit around the target if it can hold one
         # (hovering beside it costs thrust every second); otherwise hover.
+        # On a tour we always orbit - the orbit-hold thrusters keep it there.
         orbit_r = t.pos.distance_to(craft.pos)
         host = dominant_body(t, bodies)
-        if host is None or orbit_r < 0.45 * hill_radius(t, host):
+        if p.itinerary or host is None or orbit_r < 0.45 * hill_radius(t, host):
             p.set_mode("hold", hold=("orbit", t, orbit_r))
             p.status = f"Rendezvous done - entering orbit around {t.name}"
             return a
@@ -191,6 +235,39 @@ def _follow(craft, bodies, sim_dt, real_dt, keys):
     else:
         p.status = f"Rendezvous with {t.name}: {max(dist - standoff, 0):.0f} px, closing at {rel_speed:.0f} px/s"
     return a
+
+
+def _avoid(craft, v_des, bodies, target):
+    """Collision avoidance for direct flight. For every planet or star other
+    than the target:
+      * if we're already inside its safe distance and closing in, push out;
+      * look ahead along both the *planned* velocity and our *actual* one;
+        if either would pass closer than the safe distance within
+        AVOID_LOOKAHEAD seconds, push sideways away from it.
+    The pushes are added to the planned velocity."""
+    for b in bodies:
+        if b is craft or b is target or b.particle or b.kind == "craft":
+            continue
+        safe = b.radius * 2 + AVOID_MARGIN
+        d = b.pos - craft.pos                              # us -> it
+        dist = d.length()
+        actual = craft.vel - b.vel
+        if dist < safe and actual.dot(d) > 0:              # too close and closing
+            out = -d / dist if dist > 1e-6 else pygame.Vector2(1, 0)
+            v_des = v_des + out * (actual.dot(d) / dist + (safe - dist) * 2)
+        for u in (v_des - b.vel, actual):                  # planned, then actual path
+            u2 = u.length_squared()
+            if u2 < 1e-6:
+                continue
+            t_close = d.dot(u) / u2                        # time of closest approach
+            if not 0 < t_close < AVOID_LOOKAHEAD:
+                continue
+            miss_vec = u * t_close - d                     # from it to our closest point
+            miss = miss_vec.length()
+            if miss < safe:
+                away = miss_vec / miss if miss > 1e-6 else pygame.Vector2(-u.y, u.x).normalize()
+                v_des = v_des + away * (safe - miss) / max(t_close, 0.25)
+    return v_des
 
 
 def _transfer(craft, bodies, sim_dt, real_dt, keys):
@@ -263,7 +340,9 @@ def pilot_to_dict(pilot, index):
     elif pilot.hold:
         hold = ["orbit", index(pilot.hold[1]), pilot.hold[2]]
     return {"mode": pilot.mode, "hold": hold,
-            "target": index(pilot.target) if pilot.target else None, "dv": pilot.dv}
+            "target": index(pilot.target) if pilot.target else None, "dv": pilot.dv,
+            "itinerary": [index(b) for b in pilot.itinerary], "dwell": pilot.dwell,
+            "hold_time": pilot.hold_time}
 
 
 def pilot_from_dict(d, bodies):
@@ -276,4 +355,7 @@ def pilot_from_dict(d, bodies):
     target = bodies[d["target"]] if d.get("target") is not None else None
     p.set_mode(d.get("mode", "off"), target=target, hold=hold)
     p.dv = d.get("dv", 0.0)
+    p.itinerary = [bodies[i] for i in d.get("itinerary", []) if i is not None]
+    p.dwell = d.get("dwell", p.dwell)
+    p.hold_time = d.get("hold_time", 0.0)
     return p

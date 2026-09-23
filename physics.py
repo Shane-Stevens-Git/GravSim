@@ -55,7 +55,7 @@ def verlet(pos, vel, acc, mass, movable, dt, sources=None, soft2=None, thrust=No
     return new_acc
 
 
-def find_collisions(pos, vel, radii, mode, cols=None, particle=None, absorbs=None):
+def find_collisions(pos, vel, radii, mode, cols=None, particle=None, absorbs=None, craft=None):
     """Sorted index pairs (i, j), i < j, of overlapping bodies.
 
     `cols` (index array of regular bodies) restricts checks to pairs that
@@ -74,6 +74,9 @@ def find_collisions(pos, vel, radii, mode, cols=None, particle=None, absorbs=Non
     if particle is not None and absorbs is not None and not absorbs.all():
         # Test particles fly through bodies that don't absorb them (galaxy cores)
         hit &= ~(particle[:, None] & ~absorbs[cols][None, :])
+    if craft is not None and craft.sum() > 1:
+        # Spacecraft never hit each other (space is big; they'd steer clear)
+        hit &= ~(craft[:, None] & craft[cols][None, :])
     ii, cc = np.nonzero(hit)
     pairs = {(min(i, j), max(i, j)) for i, j in zip(ii.tolist(), cols[cc].tolist()) if i != j}
     return sorted(pairs)
@@ -141,6 +144,7 @@ def simulate(bodies, dt, steps, mode, events=None):
         sources = np.nonzero(~particle)[0] if particle.any() else None
         soft2 = np.array([b.soft ** 2 for b in bodies], dtype=float)
         absorbs = np.array([b.absorbs for b in bodies], dtype=bool)
+        craft = np.array([b.kind == "craft" for b in bodies], dtype=bool)
         thrust = None
         if any(b.thrust.x or b.thrust.y for b in bodies):
             thrust = np.array([(b.thrust.x, b.thrust.y) for b in bodies], dtype=float)
@@ -151,7 +155,7 @@ def simulate(bodies, dt, steps, mode, events=None):
         while done < steps and not pairs:
             acc = verlet(pos, vel, acc, mass, movable, dt, sources, soft2, thrust)
             done += 1
-            pairs = find_collisions(pos, vel, radii, mode, sources, particle, absorbs)
+            pairs = find_collisions(pos, vel, radii, mode, sources, particle, absorbs, craft)
         for b, p, v in zip(bodies, pos, vel):
             b.pos.update(p[0], p[1])
             b.vel.update(v[0], v[1])

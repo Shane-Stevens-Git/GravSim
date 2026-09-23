@@ -70,6 +70,7 @@ python main.py
 | Lagrange points | Asteroids at L1-L5. L4/L5 (green) hold them in tadpole loops; L1-L3 (amber) are unstable, so those drift off - while **probes** beside the L1 and L2 asteroids hold those points with small thruster burns (station-keeping). |
 | Galaxy collision | 2,300 stars in two disk galaxies on a close, bound fly-by: tidal tails, bridges, stolen stars; the cores come back and merge. Try 4x. |
 | Shatter demo | Switches to SHATTER mode: a head-on planet/giant smash at ~2 s, a planet shredded by the sun's tides at ~3 s, and the smash remnant falling sunward to be shredded too. |
+| Space traffic | Six colored ships on endless tours of three planets: each orbits a planet for 8 s, then flies to the next on its route (rendezvous, enter orbit, repeat), steering around planets and the sun. Try 8x with trails on. |
 
 **Test particles:** belt asteroids, Lagrange asteroids and galaxy stars feel
 gravity but exert none and never collide with each other (like real
@@ -95,8 +96,10 @@ an **Autopilot** row. Fuel is unlimited, but the delta-v spent is shown.
 - **Manual** - fly it with the arrow keys.
 - **Off** - engine off, just coasting.
 
-Spacecraft fly through dust and debris (test particles) but crash into
-planets and stars.
+Spacecraft fly through dust, debris and each other, but crash into planets
+and stars - direct flights (Follow, tours) steer around anything in the way.
+Tours (see the Space traffic scene) loop a craft through a list of planets;
+picking any autopilot mode by hand ends the tour.
 
 ### Sun panel
 

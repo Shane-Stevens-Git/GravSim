@@ -254,6 +254,37 @@ def shatter_demo(sun_cfg, sun_fixed=False):
     return scene(bodies, mode="shatter")
 
 
+def space_traffic(sun_cfg, sun_fixed=False, seed=5):
+    """Three planets and six spacecraft on endless tours: each ship orbits a
+    planet for a while, then flies to the next one on its itinerary
+    (rendezvous, enter orbit, repeat). Timers are staggered so there's
+    always someone arriving or leaving. Planet masses/spacing were chosen so
+    the planets' own orbits stay stable."""
+    rng = random.Random(seed)
+    sun = make_sun(sun_cfg, sun_fixed)
+    planets = [
+        orbiting(sun, 160, 0, 60, 10, (90, 170, 255), "Aqua", screen_ccw=True),
+        orbiting(sun, 320, 140, 80, 12, (230, 170, 100), "Ember", screen_ccw=True),
+        orbiting(sun, 520, 260, 60, 11, (170, 230, 150), "Verdant", screen_ccw=True),
+    ]
+    bodies = [sun] + planets
+    if not sun.fixed:
+        zero_momentum(bodies)
+    colors = [(255, 120, 120), (255, 200, 90), (140, 230, 140),
+              (120, 200, 255), (200, 150, 255), (255, 150, 210)]
+    routes = [(0, 1, 2), (1, 2, 0), (2, 0, 1), (0, 2, 1), (1, 0, 2), (2, 1, 0)]
+    for k, (route, color) in enumerate(zip(routes, colors)):
+        home = planets[route[0]]
+        ship = make_craft(orbiting(home, home.radius + 4 + TOUR_ORBIT_GAP + 3 * (k % 2),
+                                   rng.uniform(0, 360),
+                                   0.001, 4, color, f"Ship {k + 1}", screen_ccw=True))
+        # Stagger departures so the traffic is spread out
+        ship.pilot.start_tour([planets[i] for i in route], dwell=TOUR_DWELL,
+                              time_in=TOUR_DWELL * k / len(routes))
+        bodies.append(ship)
+    return scene(bodies, zoom=0.65)
+
+
 SCENARIOS = [
     ("Sun & planet", "The default: one planet on an elliptical orbit.", sun_and_planet),
     ("Inner solar system", "Four planets, and a moon around Earth.", inner_solar_system),
@@ -263,6 +294,7 @@ SCENARIOS = [
     ("Lagrange points", "Asteroids at L1-L5; probes hold L1 and L2 with thrusters.", lagrange),
     ("Galaxy collision", "Two disk galaxies fly past and tear out tidal tails.", galaxy_collision),
     ("Shatter demo", "A head-on smash, then tides shred what falls sunward.", shatter_demo),
+    ("Space traffic", "Six ships touring three planets, orbiting each in turn.", space_traffic),
 ]
 
 
