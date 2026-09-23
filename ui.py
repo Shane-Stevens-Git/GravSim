@@ -159,7 +159,7 @@ class HUD:
         row_h = 24
         rect = self.panel(surface, (PAD, PAD, SIDE_W, 78 + row_h * len(toggles)))
         x, y = rect.x + 14, rect.y + 12
-        self.text(surface, self.f_title, "GRAVSIM", ACCENT, (x, y))
+        self.text(surface, self.f_title, "SIMULATION", ACCENT, (x, y))
         self.text(surface, self.f_num, f"{fps:3.0f} fps", DIM, (rect.right - 14, y + 1), "topright")
 
         y += 28
