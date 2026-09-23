@@ -5,7 +5,17 @@ every other body with real inverse-square gravity (velocity-Verlet
 integration, vectorized with NumPy), so orbits, slingshots, collisions and
 ejections all emerge from the physics.
 
-## Run
+## Download (Windows)
+
+Grab `GravSim.exe` from the repo's **Releases** page (or from the latest
+**Build Windows exe** run on the Actions tab, under Artifacts). It's a single
+file with Python and all libraries inside, so there's nothing to install;
+just double-click it. The first launch takes a few seconds while it unpacks.
+Scene files are saved to a `saves` folder next to the .exe.
+
+To build it yourself, run `build_exe.bat`; the result is `dist\GravSim.exe`.
+
+## Run from source
 
 ```
 pip install -r requirements.txt
@@ -29,7 +39,11 @@ python main.py
 | **[ / ]**, **Del** | Lower / raise the selected body's mass (x1.5), delete it |
 | **Ctrl + scroll**, **+ / -** | Zoom in / out (0 resets) |
 | **Middle-drag** | Pan the view (switches the camera to fixed) |
-| **M / L / T / V** | Collision mode (merge / shatter / bounce), trails, aim preview, camera follow (or click the rows) |
+| **M / L / T** | Collision mode (merge / shatter / bounce), trails, aim preview (or click the rows) |
+| **V** | Camera: follow the selected body, then rotate with it, then fixed (see Rotating camera) |
+| **A** | Show the predicted orbit of every body at once, each in its own color (particles skipped, up to 60) |
+| **Tab** | Next page of the controls panel (Bodies / View / Sim / Craft / Physics) |
+| **F11** | Fullscreen on / off. The window can also be resized freely |
 | **S** | Show / hide the sun panel |
 | **P** | Scenes menu (then 1-9, 0 or click to load a preset) |
 | **O** | Orbit tool: a click places the next body on a circular orbit around whatever pulls hardest there (Shift+click: other direction) |
@@ -111,11 +125,39 @@ orbits react to them. **Recenter** moves the whole system back to the view
 center and brings the sun to rest without changing how anything moves
 relative to it. **R** resets the scene with the current sun settings.
 
+### Rotating camera (V)
+
+Press V twice to switch the camera to a frame that turns with the selected
+body around what it orbits. That body then sits still on screen, and so do
+its L4/L5 points, so Lagrange orbits show their real tadpole and horseshoe
+shapes and a Hohmann transfer looks like a loop. Trails and the aim preview are
+drawn in the rotating frame too. Throws still work: a body you release
+without dragging starts at rest in the rotating frame, i.e. co-orbiting.
+
+### Comets (7)
+
+Comets are light test particles with two tails that grow as they near a
+star: a straight blue ion tail that points directly away from the star, and
+a paler dust tail that curves back along the orbit. Throw one on a long,
+eccentric path past the sun, or load the Comets scene.
+
+### Physics settings (Tab to the Physics page)
+
+Sliders for gravity strength (G), softening, physics rate, trail length,
+bounce restitution, shatter energy, Roche coefficient and launch strength.
+Changes apply live to the running scene; **Reset to defaults** restores them.
+
+### Same scene, same result
+
+Every run is deterministic: the simulation advances a fixed amount of sim
+time per frame, whatever the frame rate, and all randomness (debris, rings)
+comes from a seeded generator that resets when a scene loads. A scene played
+twice (or rewound and replayed) plays out identically, including autopilots.
+
 Tip: the HUD shows the circular-orbit speed at your launch point. Drag
 sideways to the sun at about that speed for a circle; about 1.4x escapes.
 
-Tunables (G, time step, restitution, trail length, slingshot-style
-aiming, effects, sound volume, ...) are constants in `config.py`.
+Everything else (effects, sound volume, autopilot tuning, ...) is a constant in `config.py`.
 
 ## Code layout
 
@@ -126,9 +168,11 @@ aiming, effects, sound volume, ...) are constants in `config.py`.
 | `physics.py` | gravity (NumPy), Verlet integration, collisions, orbits, Roche limit |
 | `body.py` | Body and the camera View |
 | `scenes.py` | preset scenarios, Lagrange solver, spawn tools, save/load |
-| `history.py` | rewind buffer |
+| `craft.py` | spacecraft autopilots and tours |
+| `settings.py` | live physics settings (Physics tab) |
+| `history.py` | rewind buffer (bodies, autopilots, random state) |
 | `field.py` | gravity field overlay |
-| `effects.py` | parallax starfield, collision flashes |
+| `effects.py` | parallax starfield, collision flashes, comet tails |
 | `sound.py` | synthesized collision sounds |
 | `ui.py` | on-screen panels |
 | `render.py` | small drawing helpers |

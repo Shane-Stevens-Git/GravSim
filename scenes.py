@@ -12,6 +12,7 @@ import json
 import math
 import os
 import random
+import sys
 
 import pygame
 
@@ -20,7 +21,10 @@ from craft import make_craft, pilot_from_dict, pilot_to_dict
 from config import *
 from physics import circular_speed, corotating_velocity, lagrange_points  # noqa: F401 (re-exported)
 
-SAVE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saves")
+# Saves live next to the program: the .py files, or GravSim.exe when frozen by PyInstaller
+# (its __file__ points into a temporary unpack folder that is deleted on exit).
+_HOME = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
+SAVE_DIR = os.path.join(_HOME, "saves")
 QUICKSAVE = os.path.join(SAVE_DIR, "quicksave.json")
 CENTER = pygame.Vector2(WIDTH / 2, HEIGHT / 2)    # world point scenes are built around
 
