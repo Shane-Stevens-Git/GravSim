@@ -50,6 +50,7 @@ class App:
         self.selection = None       # the body shown in the inspector
         self.show_preview = True
         self.show_trails = True
+        self.show_orbits = False    # A: draw every body's predicted orbit
         self.follow = True          # camera keeps self.target centered
         self.mode = "merge"         # collision mode: "merge" or "bounce"
         self.paused = False
@@ -487,6 +488,8 @@ class App:
             self.rewinding = True
         elif k == pygame.K_o:
             self.orbit_tool = not self.orbit_tool
+        elif k == pygame.K_a:
+            self.show_orbits = not self.show_orbits
         elif k == pygame.K_x:
             if not self.sound.available:
                 self.notify("No audio device found - sound unavailable")
@@ -851,6 +854,29 @@ class App:
         r = max(sel.radius * view.zoom, 4) + 7 + pulse
         pygame.draw.circle(screen, ui.ACCENT, (round(p.x), round(p.y)), round(r), 2)
 
+    def draw_all_orbits(self):
+        """A: every body's two-body orbit around whatever it orbits, faintly,
+        in its own color (particles and the selected body are skipped)."""
+        drawn = 0
+        for b in self.bodies:
+            if b.particle or b.fixed or b is self.selection:
+                continue
+            primary = dominant_body(b, self.bodies)
+            if primary is None:
+                continue
+            el = orbital_elements(b.pos - primary.pos, b.vel - primary.vel,
+                                  G * (primary.mass + b.mass))
+            if el is None or not el["bound"]:
+                continue
+            pts = [self.view.to_screen((primary.pos.x + x, primary.pos.y + y))
+                   for x, y in orbit_points(el, n=96)]
+            if len(pts) > 2:
+                pygame.draw.lines(self.screen, [int(c * 0.45) for c in b.accent], True,
+                                  [(p.x, p.y) for p in pts], 1)
+            drawn += 1
+            if drawn >= MAX_ORBITS_DRAWN:
+                break
+
     def draw_orbit_ghost(self, mouse, r, color):
         """Orbit tool preview: the circle a click here would create."""
         view = self.view
@@ -891,6 +917,8 @@ class App:
         for b in self.bodies:
             if not (dots and b.particle):
                 b.draw(screen, view)
+        if self.show_orbits:
+            self.draw_all_orbits()
         self.flashes.draw(screen, view)
         if self.show_lagrange and self.lagrange:
             pts = lagrange_points(*self.lagrange)
@@ -960,6 +988,8 @@ class App:
              ("key", pygame.K_k)),
             ("O", "Orbit tool", "ON" if self.orbit_tool else "OFF", self.orbit_tool,
              ("key", pygame.K_o)),
+            ("A", "All orbits", "ON" if self.show_orbits else "OFF", self.show_orbits,
+             ("key", pygame.K_a)),
             ("W", "Gravity field", "ON" if self.show_field else "OFF", self.show_field,
              ("key", pygame.K_w)),
             ("E", "Energy graph", "ON" if self.show_energy else "OFF", self.show_energy,
@@ -969,7 +999,7 @@ class App:
             ("Z", "Rewind", f"{self.history.seconds:.0f} s", self.history.seconds > 0,
              ("rewind", 25)),
             ("P", "Scene", (SCENARIOS[self.scenario_idx][0] if self.scenario_idx is not None
-                            else "FROM FILE").upper()[:17], True, ("key", pygame.K_p)),
+                            else "FROM FILE").upper()[:18], True, ("key", pygame.K_p)),
         ]
         status = hud.draw_status(screen, self.clock.get_fps(), len(self.bodies),
                                  self.sim_time, toggles)

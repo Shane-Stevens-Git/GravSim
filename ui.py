@@ -272,6 +272,7 @@ class HUD:
             ("L", "Trails"),
             ("T", "Aim preview"),
             ("W", "Gravity field overlay"),
+            ("A", "All predicted orbits"),
             ("K", "Lagrange points"),
             ("E", "Energy & momentum graph"),
             ("S", "Sun panel"),

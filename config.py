@@ -119,3 +119,4 @@ TOUR_DWELL = 8.0            # s each Space-traffic ship orbits a planet before m
 AVOID_LOOKAHEAD = 3.0       # s: spacecraft steer around planets/stars they'd pass this soon
 AVOID_MARGIN = 35.0         # px of clearance beyond twice the body's radius
 TOUR_ORBIT_GAP = 18.0       # px between a planet's surface and a touring ship's orbit
+MAX_ORBITS_DRAWN = 60       # A (all orbits): cap for crowded scenes
