@@ -26,12 +26,12 @@ python main.py
 
 | Input | Action |
 |---|---|
-| **1-7** or click a card | Body type: Asteroid, Moon, Planet, Gas giant, Red dwarf, Spacecraft, Comet |
+| **1-6** or click a card | Body type: Asteroid, Moon, Planet, Gas giant, Red dwarf, Spacecraft |
 | **Scroll** | Size of next body (mass scales with it, same density) |
 | **Shift + scroll** | Mass of next body only (denser / lighter) |
 | **Left-drag, release** | Throw: press where it starts, drag the way it should go |
 | **Right-click** | Cancel a throw |
-| **Q** or the Select card | Select tool: clicks pick the nearest body (within ~30 px) and never create one; drag to pan. 1-7 switches back to throwing |
+| **Q** or the Select card | Select tool: clicks pick the nearest body (within ~30 px) and never create one; drag to pan. 1-6 switches back to throwing |
 | **Arrow keys** | Fly the selected spacecraft in Manual mode (Up thrust, Down brake, Left/Right turn) |
 | **Click a body** | Select it: inspector shows its orbit (period, eccentricity, peri/apoapsis) and draws the predicted ellipse |
 | **G** | Camera follows the selected body (again: back to the sun) |
@@ -45,7 +45,7 @@ python main.py
 | **Tab** | Next page of the controls panel (Bodies / View / Sim / Craft / Physics) |
 | **F11** | Fullscreen on / off. The window can also be resized freely |
 | **S** | Show / hide the sun panel |
-| **P** | Scenes menu (then 1-9, 0 or click to load a preset) |
+| **P** | Scenes menu (then 1-9 or click to load a preset) |
 | **O** | Orbit tool: a click places the next body on a circular orbit around whatever pulls hardest there (Shift+click: other direction) |
 | **B** | Add a ring of particles around the selected body (inside its Hill sphere) |
 | **W** | Gravity field overlay: potential wells as a heatmap with contour lines |
@@ -86,7 +86,6 @@ python main.py
 | Galaxy collision | 2,300 stars in two disk galaxies on a close, bound fly-by: tidal tails, bridges, stolen stars; the cores come back and merge. Try 4x. |
 | Shatter demo | Switches to SHATTER mode: a head-on planet/giant smash at ~2 s, a planet shredded by the sun's tides at ~3 s, and the smash remnant falling sunward to be shredded too. |
 | Space traffic | Six colored ships on endless tours of three planets: each orbits a planet for 8 s, then flies to the next on its route (rendezvous, enter orbit, repeat), steering around planets and the sun. Try 8x with trails on. |
-| Comets | Six comets on long, eccentric orbits. Their tails grow as they swing past the sun: a straight blue ion tail pointing directly away from the sun, and a curved dust tail that lags behind along the orbit. |
 
 **Test particles:** belt asteroids, Lagrange asteroids and galaxy stars feel
 gravity but exert none and never collide with each other (like real
@@ -134,13 +133,6 @@ shapes and a Hohmann transfer looks like a loop. Trails and the aim preview are
 drawn in the rotating frame too. Throws still work: a body you release
 without dragging starts at rest in the rotating frame, i.e. co-orbiting.
 
-### Comets (7)
-
-Comets are light test particles with two tails that grow as they near a
-star: a straight blue ion tail that points directly away from the star, and
-a paler dust tail that curves back along the orbit. Throw one on a long,
-eccentric path past the sun, or load the Comets scene.
-
 ### Physics settings (Tab to the Physics page)
 
 Sliders for gravity strength (G), softening, physics rate, trail length,
@@ -172,7 +164,7 @@ Everything else (effects, sound volume, autopilot tuning, ...) is a constant in 
 | `settings.py` | live physics settings (Physics tab) |
 | `history.py` | rewind buffer (bodies, autopilots, random state) |
 | `field.py` | gravity field overlay |
-| `effects.py` | parallax starfield, collision flashes, comet tails |
+| `effects.py` | parallax starfield, collision flashes |
 | `sound.py` | synthesized collision sounds |
 | `ui.py` | on-screen panels |
 | `render.py` | small drawing helpers |

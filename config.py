@@ -45,7 +45,7 @@ PARTICLE_TRAIL_LENGTH = 45  # belts can have hundreds of particles: keep their t
 SUN_TRAIL_LENGTH = 900      # the sun moves slowly, so it keeps a longer trail (15 s)
 TRAIL_BANDS = 8             # fade is drawn in this many brightness bands
 
-# Body presets, selected with number keys 1-7: (name, mass, radius, color)
+# Body presets, selected with number keys 1-6: (name, mass, radius, color)
 PRESETS = [
     ("Asteroid",   1,     3, (160, 160, 160)),
     ("Moon",       5,     5, (210, 210, 220)),
@@ -53,7 +53,6 @@ PRESETS = [
     ("Gas giant",  200,  14, (230, 170, 100)),
     ("Red dwarf",  2000, 20, (255, 110, 70)),
     ("Spacecraft", 0.001, 4, (225, 232, 255)),   # has an engine + autopilot (craft.py)
-    ("Comet",      0.5,   3, (185, 225, 255)),   # grows tails near a star (effects.CometTails)
 ]
 
 
@@ -121,8 +120,3 @@ AVOID_LOOKAHEAD = 3.0       # s: spacecraft steer around planets/stars they'd pa
 AVOID_MARGIN = 35.0         # px of clearance beyond twice the body's radius
 TOUR_ORBIT_GAP = 18.0       # px between a planet's surface and a touring ship's orbit
 MAX_ORBITS_DRAWN = 60       # A (all orbits): cap for crowded scenes
-
-# --- Comets --------------------------------------------------------------------------
-COMET_TAIL_LEN = 70.0       # px tail length at COMET_TAIL_DIST from the star
-COMET_TAIL_DIST = 180.0     # px; tails scale with (this / distance)^2
-COMET_TAIL_MAX = 3.0        # cap on that scale (sungrazers)

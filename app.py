@@ -11,7 +11,7 @@ import ui
 from body import Body, View
 from config import *
 from craft import make_craft, steer
-from effects import CometTails, Flashes, Starfield
+from effects import Flashes, Starfield
 from field import FieldOverlay
 from history import History
 from physics import (circular_speed, dominant_body, orbit_info, orbit_points,
@@ -40,7 +40,6 @@ class App:
         self.hud = ui.HUD(*self.screen.get_size())
         self.starfield = Starfield()
         self.flashes = Flashes()
-        self.comet_tails = CometTails()
         self.sound = Sound()
         self.view = View(self.screen.get_size())
 
@@ -533,9 +532,8 @@ class App:
                 self.running = False
         elif k == pygame.K_p:
             self.hud.scenes_open = not self.hud.scenes_open
-        elif self.hud.scenes_open and pygame.K_0 <= k <= pygame.K_9 and \
-                (k - pygame.K_1) % 10 < len(SCENARIOS):
-            self.notify(f"Scene: {self.start_scenario((k - pygame.K_1) % 10)}")
+        elif self.hud.scenes_open and pygame.K_1 <= k < pygame.K_1 + len(SCENARIOS):
+            self.notify(f"Scene: {self.start_scenario(k - pygame.K_1)}")
         elif k == pygame.K_k:
             self.toggle_lagrange()
         elif k == pygame.K_q:
@@ -672,9 +670,7 @@ class App:
         name, m, r, color = self.preset_body()
         start = self.view.to_world(self.drag_start)
         vel = self.launch_velocity(pos) + self.frame_velocity(start)   # relative to the frame
-        comet = name == "Comet"             # comets: test particles with tails
-        body = Body(start, m, r, color, vel=vel, name=name,
-                    kind="comet" if comet else "body", particle=comet)
+        body = Body(start, m, r, color, vel=vel, name=name)
         self.bodies.append(body)
         if name == "Spacecraft":
             make_craft(body)
@@ -709,8 +705,6 @@ class App:
             self.notify("Too close - that would be inside it")
         else:
             self.bodies.append(body)
-            if name == "Comet":
-                body.kind, body.particle = "comet", True
             if name == "Spacecraft":
                 make_craft(body)
                 self.selection = body
@@ -982,10 +976,6 @@ class App:
                     continue
                 rel = following and b is not target
                 b.draw_trail(screen, view, (target.pos.x, target.pos.y) if rel else (0.0, 0.0))
-        comets = [b for b in self.bodies if b.kind == "comet"]
-        if comets:
-            stars = [b for b in self.bodies if b.kind == "star"] or [sun]
-            self.comet_tails.draw(screen, view, comets, stars)
         dots = crowded and view.zoom < 2.5
         if dots:
             draw_points(screen, [b for b in self.bodies if b.particle], view)
