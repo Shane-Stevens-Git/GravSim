@@ -14,10 +14,19 @@ RATE = 44100
 class Sound:
     def __init__(self):
         self.enabled = False
+        self.rate, self.channels = RATE, 2
         self.cache = {}
         self.last = {}
         try:
-            pygame.mixer.init(frequency=RATE, size=-16, channels=2, buffer=512)
+            # allowedchanges=0: ask SDL to convert to our format instead of
+            # picking the device's own (some Windows devices are 6- or 8-channel).
+            try:
+                pygame.mixer.init(frequency=RATE, size=-16, channels=2, buffer=512,
+                                  allowedchanges=0)
+            except TypeError:                       # older pygame without allowedchanges
+                pygame.mixer.init(frequency=RATE, size=-16, channels=2, buffer=512)
+            # Build sounds for whatever format we actually got.
+            self.rate, _size, self.channels = pygame.mixer.get_init()
             pygame.mixer.set_num_channels(16)
             self.enabled = SOUND_ON
             self.available = True
@@ -30,6 +39,7 @@ class Sound:
         return self.enabled
 
     def _make(self, kind, freq):
+        RATE = self.rate
         n = int(RATE * {"merge": 0.35, "shatter": 0.45, "bounce": 0.12, "tidal": 0.9}[kind])
         t = np.arange(n) / RATE
         rng = np.random.default_rng(int(freq))
@@ -52,7 +62,10 @@ class Sound:
         wave = wave * attack
         wave /= max(np.max(np.abs(wave)), 1e-9)
         pcm = (wave * 32767 * 0.8).astype(np.int16)
-        return pygame.sndarray.make_sound(np.column_stack([pcm, pcm]))
+        if self.channels == 1:
+            return pygame.sndarray.make_sound(pcm)
+        return pygame.sndarray.make_sound(np.ascontiguousarray(
+            np.repeat(pcm[:, None], self.channels, axis=1)))
 
     def play(self, kind, mass, strength):
         """kind: merge / shatter / bounce / tidal. Pitch from mass, volume
@@ -67,7 +80,11 @@ class Sound:
         freq = round(freq / 10) * 10                                      # cache buckets
         key = (kind, freq)
         if key not in self.cache:
-            self.cache[key] = self._make(kind, freq)
+            try:
+                self.cache[key] = self._make(kind, freq)
+            except (ValueError, pygame.error):     # odd audio device: go silent, don't crash
+                self.enabled = self.available = False
+                return
         vol = min(max(0.15 + 0.08 * math.log10(max(strength, 1.0)), 0.15), 0.8) * SOUND_VOLUME
         channel = self.cache[key].play()
         if channel is not None:
